@@ -5,7 +5,7 @@ flowchart LR
     U[Browser] -->|"POST /api/v1/chat"| V[Vite dev proxy]
     V -->|"adds X-API-Key"| A[FastAPI]
     A -->|"validates request"| S[Pydantic models]
-    A -->|"messages.create"| C[Claude API]
+    A -->|"generateContent"| C[Gemini API]
     C --> A --> U
 ```
 

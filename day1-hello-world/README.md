@@ -2,7 +2,7 @@
 
 A full-stack smoke test: FastAPI backend with one authenticated LLM endpoint, and a React frontend in DataFactZ branding.
 
-**Stack:** Python 3.12, FastAPI, Pydantic, Anthropic SDK, React (Vite), Tailwind CSS, Lucide icons.
+**Stack:** Python 3.12, FastAPI, Pydantic, Gemini API (via httpx), React (Vite), Tailwind CSS, Lucide icons.
 
 ## Features
 

@@ -1,12 +1,10 @@
 import os
-from types import SimpleNamespace
 
-os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
+os.environ.setdefault("GEMINI_API_KEY", "test-key")
 os.environ.setdefault("APP_API_KEY", "test-app-key")
 
 import httpx
 import pytest
-from anthropic import APIConnectionError
 from fastapi.testclient import TestClient
 
 from app import main
@@ -27,17 +25,29 @@ def test_chat_rejects_empty_prompt():
     assert client.post("/api/v1/chat", json={"prompt": ""}, headers=HEADERS).status_code == 422
 
 
+def _stub_post(monkeypatch, fn):
+    monkeypatch.setattr(main.httpx, "post", fn)
+
+
 def test_chat_returns_model_reply(monkeypatch):
-    fake = SimpleNamespace(model="test-model", content=[SimpleNamespace(type="text", text="Hello")])
-    monkeypatch.setattr(main.client.messages, "create", lambda **_: fake)
+    body = {"candidates": [{"content": {"parts": [{"text": "Hello"}]}}]}
+    _stub_post(monkeypatch, lambda *a, **k: httpx.Response(200, json=body, request=httpx.Request("POST", "http://x")))
     res = client.post("/api/v1/chat", json={"prompt": "hi"}, headers=HEADERS)
     assert res.status_code == 200
-    assert res.json() == {"reply": "Hello", "model": "test-model"}
+    assert res.json() == {"reply": "Hello", "model": main.settings.gemini_model}
 
 
 def test_chat_maps_provider_failure_to_502(monkeypatch):
-    def boom(**_):
-        raise APIConnectionError(request=httpx.Request("POST", "http://x"))
+    def boom(*a, **k):
+        raise httpx.ConnectError("down", request=httpx.Request("POST", "http://x"))
 
-    monkeypatch.setattr(main.client.messages, "create", boom)
+    _stub_post(monkeypatch, boom)
     assert client.post("/api/v1/chat", json={"prompt": "hi"}, headers=HEADERS).status_code == 502
+
+
+def test_chat_reports_bad_key(monkeypatch):
+    req = httpx.Request("POST", "http://x")
+    _stub_post(monkeypatch, lambda *a, **k: httpx.Response(400, text="API key not valid", request=req))
+    res = client.post("/api/v1/chat", json={"prompt": "hi"}, headers=HEADERS)
+    assert res.status_code == 502
+    assert "GEMINI_API_KEY" in res.json()["detail"]

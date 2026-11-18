@@ -1,6 +1,7 @@
 import logging
+import time
 
-from anthropic import Anthropic, APIError
+import httpx
 from fastapi import Depends, FastAPI, HTTPException, Security, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
@@ -10,6 +11,7 @@ from .config import settings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger("datafactz.hello")
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 app = FastAPI(title="DataFactZ Hello World", version="0.1.0")
 app.add_middleware(
@@ -19,7 +21,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-client = Anthropic(api_key=settings.anthropic_api_key)
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
@@ -45,13 +46,30 @@ def health() -> dict[str, str]:
 @app.post("/api/v1/chat", response_model=ChatResponse, dependencies=[Depends(require_api_key)])
 def chat(body: ChatRequest) -> ChatResponse:
     try:
-        msg = client.messages.create(
-            model=settings.anthropic_model,
-            max_tokens=500,
-            messages=[{"role": "user", "content": body.prompt}],
-        )
-    except APIError as exc:
+        for attempt in range(3):
+            res = httpx.post(
+                GEMINI_URL.format(model=settings.gemini_model),
+                headers={"x-goog-api-key": settings.gemini_api_key},
+                json={
+                    "contents": [{"parts": [{"text": body.prompt}]}],
+                    "generationConfig": {"maxOutputTokens": 500},
+                },
+                timeout=30,
+            )
+            if res.status_code not in (429, 503) or attempt == 2:
+                break
+            time.sleep(1.5 * (attempt + 1))
+        res.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        log.error("LLM call failed: %s %s", exc.response.status_code, exc.response.text)
+        if exc.response.status_code in (400, 401, 403):
+            detail = "The server's Gemini API key is invalid. Check GEMINI_API_KEY in .env and restart the backend."
+        else:
+            detail = "The model provider returned an error"
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail) from exc
+    except httpx.HTTPError as exc:
         log.error("LLM call failed: %s", exc)
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "The model provider returned an error") from exc
-    text = "".join(b.text for b in msg.content if b.type == "text")
-    return ChatResponse(reply=text, model=msg.model)
+    parts = (res.json().get("candidates") or [{}])[0].get("content", {}).get("parts", [])
+    text = "".join(p.get("text", "") for p in parts)
+    return ChatResponse(reply=text, model=settings.gemini_model)
