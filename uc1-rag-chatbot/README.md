@@ -4,7 +4,7 @@ A retrieval-augmented chatbot that answers EU sustainability reporting questions
 
 **Stack (planned):** Python 3.11+, FastAPI, PostgreSQL with Alembic, Azure AI Search, Azure OpenAI or Claude API, React (Vite), Tailwind CSS, Lucide icons.
 
-**Status:** planning. The problem statement is drafted.
+**Status:** backend foundation built (schema, migration, version lookup). Ingestion, retrieval and the chat API come next.
 
 ## Documents
 
