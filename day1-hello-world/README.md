@@ -40,4 +40,4 @@ pytest
 
 ## Documentation
 
-See [docs/architecture.md](docs/architecture.md) for the diagram, design decisions, and scaling notes.
+See [docs/architecture.md](docs/architecture.md) for the diagram, design decisions, and scaling notes, and [docs/cost-estimate.md](docs/cost-estimate.md) for pilot and production running costs.
