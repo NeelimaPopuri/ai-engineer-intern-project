@@ -1,0 +1,168 @@
+# Solution design: Regulatory change navigator
+
+Use Case 1, RAG knowledge chatbot. Status: draft for review. Items marked "verify" must be checked against official documentation before this document is final.
+
+## 1. Overview
+
+The system answers EU sustainability reporting questions from a controlled library of public sources. Every answer carries citations, respects the date the user asks about, and says so when the evidence is too weak. The problem, users and success criteria are in the [problem statement](problem-statement.md). The data model is in the [database design](database-design.md).
+
+## 2. Architecture
+
+```mermaid
+flowchart LR
+    U[Browser: React app] -->|"POST /api/v1/conversations/{id}/messages"| API[FastAPI]
+    API -->|"1. save question"| DB[(PostgreSQL)]
+    API -->|"2. embed query"| EMB[Embedding model]
+    API -->|"3. filtered hybrid search"| AIS[Azure AI Search]
+    API -->|"4. read chunk text and version dates"| DB
+    API -->|"5. grounded prompt with numbered sources"| LLM[Chat model]
+    LLM -->|"answer with citation numbers"| API
+    API -->|"6. validate citations, save answer"| DB
+    API -->|"answer, citations, status"| U
+    ING[Ingestion job] -->|"split, embed, index"| AIS
+    ING -->|"documents, versions, chunks"| DB
+```
+
+Every arrow is one call. Steps 1 to 6 run in order for each question. The ingestion job runs separately, whenever the library changes.
+
+## 3. Components
+
+| Component | Responsibility |
+|---|---|
+| React app | Chat screen, filters (country, company size, date), citation panel, conversation list. Shares the DataFactZ layout shell from Day 1. |
+| FastAPI routers | HTTP only: validate input, check the API key, return typed responses. No business logic. |
+| Services | `RetrievalService` (search and date filtering), `AnswerService` (prompt, model call, citation checks), `IngestionService` (split, embed, index). |
+| Data access | PostgreSQL through SQLAlchemy; Azure AI Search through its client. |
+| PostgreSQL | System of record: documents, versions, chunks, conversations, messages, citations. |
+| Azure AI Search | Finds relevant chunks by keyword and meaning, with metadata filters. |
+| Chat model | Writes the answer using only the sources it is given. |
+
+## 4. Data flow for one question
+
+1. The API saves the question and the filters (country, company size, as-of date).
+2. The question is turned into an embedding.
+3. Azure AI Search runs a hybrid search (keywords plus meaning) with filters on country, company size, and `effective_from <= as_of_date < effective_to`. It returns the top candidates.
+4. The service loads those chunks and their version details from PostgreSQL. If a returned chunk belongs to a superseded version, it is marked.
+5. If the best relevance score is below a threshold, or nothing passes the filters, the API answers `insufficient_evidence` without calling the model.
+6. Otherwise the model receives the question and numbered sources, with instructions to use only those sources and to cite by number.
+7. The API checks that every citation number refers to a source it supplied, drops answers that cite nothing, and saves the answer, citations, token counts and latency.
+
+## 5. API surface
+
+All routes are under `/api/v1`, protected by an `X-API-Key` header, with Pydantic request and response models. Errors use proper status codes, never 200 with an error body.
+
+| Method and route | Purpose | Success | Errors |
+|---|---|---|---|
+| `GET /health` | Liveness check | 200 | |
+| `POST /conversations` | Start a conversation with filters and as-of date | 201 | 401, 422 |
+| `GET /conversations` | List conversations | 200 | 401 |
+| `GET /conversations/{id}` | One conversation with messages and citations | 200 | 401, 404 |
+| `POST /conversations/{id}/messages` | Ask a question, get a cited answer | 201 | 401, 404, 422, 502 |
+| `GET /citations/{id}` | The exact source passage and its version details | 200 | 401, 404 |
+| `POST /documents` | Add a source document version (admin) | 202 | 401, 422 |
+| `GET /documents` | List sources and their versions | 200 | 401 |
+
+`POST /documents` returns 202 because ingestion runs as a background job.
+
+## 6. Pattern justification
+
+Each decision names the options considered. Claims about product features are marked "verify" until checked.
+
+### 6.1 Retrieval method
+
+| Option | Pros | Cons |
+|---|---|---|
+| **Hybrid search (keywords plus vectors) with filters** (chosen) | Exact terms such as article numbers match by keyword; paraphrased questions match by meaning; filters handle country and dates | More configuration than either alone |
+| Vector search only | Simple | Misses exact references like "Article 29b"; weak on identifiers |
+| Keyword search only | Precise for exact terms | Misses paraphrased questions |
+
+Chosen because regulatory questions mix exact references and plain-language wording. Verify that hybrid search and filters are available on the Azure AI Search tier in the shared Resource Group.
+
+### 6.2 Vector store
+
+| Option | Pros | Cons |
+|---|---|---|
+| **Azure AI Search** (chosen) | Required stack for UC1; hybrid search and metadata filters in one service; managed | Second datastore to keep in sync; cost grows with tier |
+| `pgvector` in PostgreSQL | One datastore; relational joins with metadata; lowest cost | Outside the required stack; weaker hybrid search tooling; slower at large scale |
+| FAISS | Fast, free, runs locally | No filtering or persistence by default; nothing managed; not suitable for production |
+
+### 6.3 Chunking strategy
+
+| Option | Pros | Cons |
+|---|---|---|
+| **Structure-aware chunks** (by article or section, with a size limit and small overlap) (chosen) | Citations point to a real article; chunks keep their meaning | Needs parsing per document type |
+| Fixed-size chunks | Simple to build | Cuts sentences and articles in half; poor citations |
+| Whole-document embeddings | Fewest chunks | Too coarse to cite; wastes model context |
+
+Chunk size and overlap will be tuned on the evaluation set, not guessed.
+
+### 6.4 Chat model
+
+| Option | Pros | Cons |
+|---|---|---|
+| **Azure OpenAI chat model** (chosen if available in the Resource Group) | Same cloud as search; no data leaves Azure; one bill | Depends on the models granted to the group |
+| Claude API | Strong at following citation instructions; useful for the program's required model comparison | Separate provider; Claude has no embedding model, so an Azure embedding model is still needed |
+| Small open-source model | Lowest cost | Weaker answer quality; hosting effort |
+
+The program expects a comparison of at least two models. The plan is to build with one and run the evaluation set against a second, reporting accuracy, cost and speed. Verify which models are available in the shared Resource Group.
+
+### 6.5 Handling changing rules
+
+| Option | Pros | Cons |
+|---|---|---|
+| **Version table with effective dates, filtered at search time** (chosen) | Answers any date correctly; old versions stay available | More data and a more complex search filter |
+| Keep only the latest version | Simplest | Cannot answer past or future dates |
+| Re-index on every change and delete the old index | Always current | Loses history; cannot explain what changed |
+
+### 6.6 Framework
+
+| Option | Pros | Cons |
+|---|---|---|
+| **Plain Python services with direct SDK calls** (chosen) | Every step is visible and testable; easy to explain in review | More code to write |
+| LangChain | Many ready-made parts | Hides the retrieval steps; harder to debug and defend |
+| LlamaIndex | Strong for document indexing | Same trade-off; adds a layer between the code and the services |
+
+### 6.7 Backend runtime
+
+| Option | Pros | Cons |
+|---|---|---|
+| **FastAPI with async endpoints** (chosen) | Pydantic validation, generated OpenAPI docs, async calls to the model and search | Async needs care with the database driver |
+| Flask | Familiar | No built-in validation or async focus |
+| Django REST | Full framework with an admin panel | Heavier than this service needs |
+
+## 7. Security considerations
+
+- **Authentication:** API-key header on every route. Keys live in environment variables, never in git.
+- **Secrets:** `.env` is git-ignored. The frontend never holds the key; the development proxy adds it.
+- **Prompt injection:** retrieved text is treated as data. The prompt tells the model to ignore instructions found in sources, and the service rejects answers whose citations do not match the supplied sources.
+- **Data scope:** the library holds public sources only. Client documents would need per-client indexes or filters, access checks on every query and an audit trail. This is out of scope for the pilot and is listed as a later phase.
+- **Logging:** log question length, latency, token counts and answer status. Do not log full question text by default, since users may paste client details.
+- **Input limits:** a maximum question length and rate limits per API key.
+
+## 8. Quality and evaluation
+
+- 40 test questions in `eval_questions`, split into questions the library can answer, questions it cannot, and date-sensitive questions.
+- Each run records whether the correct passage was cited and whether the assistant answered or refused as expected.
+- Unit tests cover the core logic: chunking, date filtering, citation validation and the refusal threshold. Tests do not call real models.
+
+## 9. What changes at 100x load
+
+| What breaks first | Change |
+|---|---|
+| Each question makes sequential network calls (embedding, search, database, model), and the model call dominates latency | Keep async calls; cache embeddings of repeated questions; stream the answer to the browser |
+| Model rate limits and cost at 5,000 users | Request queueing and per-key rate limits; a smaller model for simple questions, with the larger one only when retrieval is uncertain |
+| Azure AI Search throughput | Add replicas; use a higher service tier |
+| `messages` table growth | Partition by month; archive old conversations |
+| Ingestion of large documents | Move to a worker queue with retries; the API already returns 202 |
+| One API instance | The API is stateless, so run several behind a load balancer |
+
+## 10. Cost
+
+The cost estimate for this use case will be written after the model choice is confirmed. It will follow the format of the Day 1 [cost estimate](../../day1-hello-world/docs/cost-estimate.md), covering model tokens, embeddings, Azure AI Search, hosting and storage at 100 and 5,000 users, with all prices verified against official pages.
+
+## 11. Open items
+
+- Confirm the scenario, success targets and any required models against the UC1 brief.
+- Verify which Azure services and models the shared Resource Group provides.
+- Verify Azure AI Search feature and tier details cited in section 6.
+- Collect and check the public source documents, and record the official source and version date of each.

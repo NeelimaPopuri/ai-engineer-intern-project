@@ -10,6 +10,7 @@ A retrieval-augmented chatbot that answers EU sustainability reporting questions
 
 - [Problem statement](docs/problem-statement.md)
 - [Database design](docs/database-design.md)
+- [Solution design](docs/solution-design.md)
 
 ## Next steps
 
