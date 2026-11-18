@@ -28,13 +28,13 @@ Tools used: Claude Code (pair programmer).
 
 ## What I can explain
 
-- **API key check:** every request to `/api/v1/chat` must send an `X-API-Key` header that matches `APP_API_KEY` in `.env`. If it does not, the API returns 401, so only my own frontend can call it.
-- **Request validation:** a Pydantic model checks that the prompt is 1 to 2,000 characters. An empty or oversized prompt returns 422 before any model call, which saves cost.
-- **Gemini call:** the backend sends the prompt to Gemini's REST API with `httpx`, using my Gemini key from `.env`, and returns the reply text and model name.
-- **Retry logic:** if Gemini returns 429 (rate limit) or 503 (overloaded), the backend waits 1.5 seconds, then 3 seconds, and tries up to 3 times. Brief overloads then do not show up as errors in the UI.
-- **Error handling:** if Gemini still fails, the API returns 502 Bad Gateway, which means the model provider failed, not my server. A rejected key (400, 401 or 403) gets a clearer message that points to `GEMINI_API_KEY`.
-- **Dev proxy:** the browser calls `/api/v1/chat` on the Vite dev server, which forwards it to FastAPI and adds the app key. The key never ships in the browser code, which is why it is not a `VITE_` variable.
-- **Config:** `pydantic-settings` reads `.env` into typed settings and stops the app at startup if a key is missing, so mistakes show up early.
+- **API key check:** I protect the chat endpoint with a key. The request must send the correct `X-API-Key` header, otherwise the API answers 401, so only my own frontend can use it.
+- **Request validation:** I check the prompt before calling the model. It must be between 1 and 2,000 characters, otherwise the API answers 422 and no money is spent on the model.
+- **Gemini call:** my backend sends the prompt to Gemini over HTTP with `httpx` and sends back the reply text and the model name.
+- **Retry logic:** Gemini is sometimes overloaded and answers 503 or 429. My backend waits a moment and tries again, up to 3 times, so short overloads do not show up as errors for the user.
+- **Error handling:** if Gemini still fails, my API answers 502, which means the problem is the model provider and not my server. If the key is wrong, the message tells me to check `GEMINI_API_KEY`.
+- **Dev proxy:** the browser talks to the Vite dev server, which passes the request to FastAPI and adds the app key. This keeps the key out of the browser code. A `VITE_` variable would have exposed it.
+- **Config:** the settings are read from `.env` into typed fields. If a key is missing, the app stops at startup, so I find the mistake right away.
 - **Secrets:** `.env` is git-ignored and only `.env.example` is committed, so no real key is in the repository.
-- **Tests:** six automated tests use fake Gemini responses to check health, auth, validation, a successful reply, a provider failure and a bad key. They never call the real API.
-- **Cost:** a request costs about $0.000475, mostly from output tokens, so Day 1 costs about $36 per month for 100 users. The math is in `cost-estimate.md`.
+- **Tests:** six automated tests check health, the key check, validation, a good reply, a provider failure and a bad key. They use fake Gemini answers, so they never call the real API.
+- **Cost:** one request costs about $0.000475, mostly from output tokens. That is about $36 a month for 100 users. The full math is in `cost-estimate.md`.
