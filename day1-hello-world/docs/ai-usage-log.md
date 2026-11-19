@@ -25,6 +25,10 @@ Tools used: Claude Code (pair programmer).
 | 2026-11-19 | UC1 source library | Collect public EU sustainability reporting documents | `collect_sources.py`, 10 documents (2.1 MB) in `data/sources/` and `sources.csv` | I approved the download list. Checked each legal text's title and in-force date against the Official Journal wording. The EUR-Lex bot check was not bypassed |
 | 2026-11-19 | UC1 data loading | Load the library into the database | `load_sources.py`: 7 documents, 10 versions, 2,047 chunks, versions chained by date | Checked the version dates and end dates in the database |
 | 2026-11-19 | UC1 embeddings and search | Add embeddings and local hybrid search with date and country filters | `embeddings.py`, `search.py`, `embed_chunks.py`, a migration and 5 new tests (25 passing) | Tests use a fake embedder. The live Gemini embedding call was run on 50 chunks before the full run |
+| 2026-11-19 | UC1 chat API | Build conversations, cited answers, refusal and citation checks | `answer.py`, `llm.py`, routes in `main.py` and 10 new tests | Tests use fake models. A parsing bug (citations like [4, 6]) was found by running the real model and fixed |
+| 2026-11-19 | UC1 evaluation | Write 20 test questions and a scoring script | `eval_questions.json`, `run_eval.py`, `evaluation-results.md`: 19 of 20 correct | I checked the expected facts against the source texts. One expectation was wrong and was corrected with a written reason, not tuned to pass |
+| 2026-11-19 | UC1 chat screen | Build the React chat page with date and country filters | `uc1-rag-chatbot/frontend/` | Tried it in the browser: cited answer for 2026, refusal for 2024. Found and fixed a crash in the scroll effect |
+| 2026-11-19 | UC1 cost estimate | Write the pilot and production cost estimate | `uc1-rag-chatbot/docs/cost-estimate.md` | Model and embedding prices read from Google's pricing page. Azure infrastructure prices are estimates and not verified |
 
 ## What I built or decided myself
 
@@ -36,6 +40,7 @@ Tools used: Claude Code (pair programmer).
 - I reviewed the architecture document.
 - I chose the direction for the UC1 scenario: an advanced case built on a current market problem, in the style of a professional services firm.
 - I decided to build UC1 locally with Gemini because Azure access and the issued model keys were not available.
+- I decided to stop embedding at the 950 chunks done, because the free-tier daily limit was reached.
 - I planned Week 1: two build days, a review day, a demo to friends and a presentation to my mentor.
 
 ## What I can explain

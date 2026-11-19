@@ -176,11 +176,24 @@ The program expects a comparison of at least two models. The plan is to build wi
 
 ## 10. Cost
 
-The cost estimate for this use case will be written after the model choice is confirmed. It will follow the format of the Day 1 [cost estimate](../../day1-hello-world/docs/cost-estimate.md), covering model tokens, embeddings, Azure AI Search, hosting and storage at 100 and 5,000 users, with all prices verified against official pages.
+See the [cost estimate](cost-estimate.md): about $128 a month for 100 users and about $1,669 for 5,000 users on the Azure target, with token prices verified on 2026-11-19 and infrastructure figures marked as unverified.
 
-## 11. Open items
+## 11. Built so far and known limits
+
+| Area | State |
+|---|---|
+| Data | 10 public documents loaded: 7 documents, 10 versions, 2,047 chunks |
+| Embeddings | 950 of 2,047 chunks have vectors. The Gemini free tier allows 1,000 embedding requests a day and that limit was reached. The decision is to keep this set |
+| Search | Hybrid ranking for chunks with vectors; keyword-only ranking for the rest and whenever the query cannot be embedded |
+| Chat API | Conversations, cited answers, refusal on weak evidence, citation validation, 401/404/422/502 codes |
+| Chat screen | React app with date and jurisdiction filters and an expandable citation panel |
+| Evaluation | 20 questions, 19 correct (see [evaluation results](evaluation-results.md)) |
+| Not built | Company-size filter in search, `POST /documents` upload, conflict status between sources, second-model comparison |
+
+## 12. Open items
 
 - Confirm the scenario, success targets and any required models against the UC1 brief.
 - Request access to the shared Azure Resource Group and the issued model keys, then verify which services and models they provide.
-- Verify Azure AI Search feature and tier details cited in section 6.
-- Collect and check the public source documents, and record the official source and version date of each.
+- Verify Azure AI Search feature and tier details cited in section 6, and the infrastructure prices in the cost estimate.
+- Rerun the evaluation once the embedding quota resets, to measure full hybrid search.
+- The library holds public sources only. A news page (3 July 2026) says the revised ESRS were awaiting scrutiny while the Official Journal text says they took effect on 10 November 2026. The chatbot does not yet flag conflicts like this.
