@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     app_api_key: str
     gemini_api_key: str
     gemini_model: str = "gemini-3.1-flash-lite"
+    # "vector" = vector search with keyword fallback; "hybrid" = keywords plus vectors merged
+    search_backend: str = "vector"
 
 
 settings = Settings()

@@ -13,7 +13,7 @@ from datetime import date
 from typing import Callable, Protocol
 
 import numpy as np
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from .embeddings import EmbeddingError, embed_texts
@@ -131,3 +131,105 @@ class LocalHybridIndex:
                 )
             )
         return hits
+
+
+class _VectorStore:
+    """All stored vectors as one normalised matrix in memory, rebuilt when the stored count changes."""
+
+    def __init__(self) -> None:
+        self.count = -1
+        self.ids: list = []
+        self.matrix = np.zeros((0, 0), dtype=np.float32)
+        self.row_of: dict = {}
+
+    def load(self, session: Session) -> None:
+        count = session.scalar(select(func.count()).select_from(ChunkEmbedding))
+        if count == self.count:
+            return
+        rows = session.execute(select(ChunkEmbedding.chunk_id, ChunkEmbedding.vector)).all()
+        self.ids = [r[0] for r in rows]
+        matrix = np.array([r[1] for r in rows], dtype=np.float32) if rows else np.zeros((0, 0), dtype=np.float32)
+        norms = np.linalg.norm(matrix, axis=1, keepdims=True) if rows else matrix
+        self.matrix = matrix / np.where(norms == 0, 1.0, norms) if rows else matrix
+        self.row_of = {chunk_id: i for i, chunk_id in enumerate(self.ids)}
+        self.count = count
+
+
+_store = _VectorStore()
+
+
+class VectorIndex:
+    """Vector-only search: filter by date and country first, then rank by cosine similarity.
+
+    A chunk with no stored vector cannot be found here. Raises EmbeddingError when the question
+    cannot be embedded, so a caller can fall back to another index.
+    """
+
+    def __init__(self, session: Session, embed: Callable[..., list[list[float]]] = embed_texts):
+        self.session = session
+        self.embed = embed
+
+    def search(self, query: str, *, as_of: date, jurisdiction: str | None = None, top_k: int = 8) -> list[SearchHit]:
+        _store.load(self.session)
+        if not _store.ids:
+            return []
+
+        # Step 1: metadata filter in the relational database (version in force on `as_of`).
+        stmt = (
+            select(Chunk.id)
+            .join(DocumentVersion, Chunk.version_id == DocumentVersion.id)
+            .join(Document, DocumentVersion.document_id == Document.id)
+            .where(
+                DocumentVersion.status != "draft",
+                DocumentVersion.effective_from <= as_of,
+                or_(DocumentVersion.effective_to.is_(None), DocumentVersion.effective_to > as_of),
+            )
+        )
+        if jurisdiction:
+            stmt = stmt.where(Document.jurisdiction == jurisdiction)
+        allowed = [_store.row_of[c] for c in self.session.scalars(stmt) if c in _store.row_of]
+        if not allowed:
+            return []
+
+        # Step 2: cosine similarity of the question against the allowed vectors only.
+        q = np.array(self.embed([query], is_query=True)[0], dtype=np.float32)
+        q /= np.linalg.norm(q) or 1.0
+        scores = _store.matrix[allowed] @ q
+        order = np.argsort(-scores)[:top_k]
+
+        # Step 3: load the text and version details for the winners.
+        picked = {_store.ids[allowed[i]]: float(scores[i]) for i in order}
+        rows = self.session.execute(
+            select(Chunk, DocumentVersion, Document)
+            .join(DocumentVersion, Chunk.version_id == DocumentVersion.id)
+            .join(Document, DocumentVersion.document_id == Document.id)
+            .where(Chunk.id.in_(picked))
+        ).all()
+        hits = [
+            SearchHit(
+                chunk_id=c.id, version_id=v.id, document_title=d.title, version_number=v.version_number,
+                effective_from=v.effective_from, effective_to=v.effective_to, section_ref=c.section_ref,
+                text=c.text, score=picked[c.id], vector_score=picked[c.id], keyword_score=0.0,
+                document_type=d.document_type,
+            )
+            for c, v, d in rows
+        ]
+        return sorted(hits, key=lambda h: -h.score)
+
+
+def _no_embedding(*args, **kwargs):
+    raise EmbeddingError("embedding skipped: using keyword search")
+
+
+class FallbackIndex:
+    """Try vector search. If the question cannot be embedded (quota, outage), use keyword search."""
+
+    def __init__(self, session: Session, embed: Callable[..., list[list[float]]] = embed_texts):
+        self.primary = VectorIndex(session, embed)
+        self.fallback = LocalHybridIndex(session, embed=_no_embedding)
+
+    def search(self, query: str, *, as_of: date, jurisdiction: str | None = None, top_k: int = 8) -> list[SearchHit]:
+        try:
+            return self.primary.search(query, as_of=as_of, jurisdiction=jurisdiction, top_k=top_k)
+        except EmbeddingError:
+            return self.fallback.search(query, as_of=as_of, jurisdiction=jurisdiction, top_k=top_k)

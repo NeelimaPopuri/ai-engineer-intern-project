@@ -12,7 +12,7 @@ The program names Azure AI Search and Azure OpenAI or the Claude API for this us
 
 | Item | Required stack | Pilot implementation | Why it is safe to swap |
 |---|---|---|---|
-| Search index | Azure AI Search | Local hybrid search over the database | Search sits behind one interface (`SearchIndex`), so only one class changes |
+| Search index | Azure AI Search | Local vector search (numpy, in memory) with keyword fallback, or local hybrid search. Chosen by `SEARCH_BACKEND` | Search sits behind one interface (`SearchIndex`), so only one class changes |
 | Embeddings | Azure OpenAI embedding model | `gemini-embedding-001` | Embedding calls sit behind one function |
 | Chat model | Azure OpenAI or Claude API | Gemini (`gemini-3.1-flash-lite`) | The model name and client are configuration |
 | Database | PostgreSQL | SQLite, same SQLAlchemy models and Alembic migrations | Only `DATABASE_URL` changes |
@@ -102,6 +102,8 @@ Chosen because regulatory questions mix exact references and plain-language word
 | **Local search behind an interface** (pilot) | Works without Azure access; same filters and scoring ideas; easy to test | Does not scale; no managed ranking features |
 | `pgvector` in PostgreSQL | One datastore; relational joins with metadata; lowest cost | Outside the required stack; weaker hybrid search tooling; slower at large scale |
 | FAISS | Fast, free, runs locally | No filtering or persistence by default; nothing managed; not suitable for production |
+| ChromaDB, Qdrant (local mode), FAISS tried on the pilot machine | Real vector databases that run without a server | All three failed to load on the pilot machine: Windows Application Control blocks their native components (`grpc`, `_swigfaiss`). Not bypassed. Would need an IT allow-list, a container, or `pgvector` on a PostgreSQL server |
+| **In-memory vector index** (pilot, `VectorIndex`) | No native components, so it runs under the machine's security policy; filters by date and country first, then ranks by cosine similarity; 16 ms over 950 vectors | Rebuilt in memory, no approximate-nearest-neighbour index, fine for thousands of chunks, not millions |
 
 ### 6.3 Chunking strategy
 
@@ -184,7 +186,8 @@ See the [cost estimate](cost-estimate.md): about $126 a month for 100 users and 
 |---|---|
 | Data | 10 public documents loaded: 7 documents, 10 versions, 2,047 chunks |
 | Embeddings | 950 of 2,047 chunks have vectors. The Gemini free tier allows 1,000 embedding requests a day and that limit was reached. The decision is to keep this set |
-| Search | Hybrid ranking for chunks with vectors; keyword-only ranking for the rest and whenever the query cannot be embedded |
+| Search | Default is vector search: date and country filter first, then cosine similarity over the 950 stored vectors. If the question cannot be embedded (quota, outage) it falls back to keyword search. `SEARCH_BACKEND=hybrid` restores the merged keyword plus vector ranking |
+| Vector search limit | A chunk with no vector cannot be found by vector search. The 1,097 chunks without vectors (all of Omnibus I, the news and guidance pages, old ESRS) are only reachable through the keyword fallback, so vector mode needs more embeddings to cover them |
 | Chat API | Conversations, cited answers, refusal on weak evidence, citation validation, 401/404/422/502 codes |
 | Chat screen | React app with date and jurisdiction filters and an expandable citation panel |
 | Evaluation | 20 questions, 18 to 19 correct on repeated runs (see [evaluation results](evaluation-results.md) and [model comparison](model-comparison.md)) |

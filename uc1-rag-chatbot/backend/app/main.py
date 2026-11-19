@@ -15,7 +15,7 @@ from .db import get_session
 from .embeddings import EmbeddingError
 from .llm import LLMError
 from .models import Citation, Conversation, Document, DocumentVersion
-from .search import LocalHybridIndex, SearchIndex
+from .search import FallbackIndex, LocalHybridIndex, SearchIndex
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger("datafactz.uc1")
@@ -100,7 +100,9 @@ class ConversationOut(BaseModel):
 
 
 def get_index(session: Session = Depends(get_session)) -> SearchIndex:
-    return LocalHybridIndex(session)
+    if settings.search_backend == "hybrid":
+        return LocalHybridIndex(session)
+    return FallbackIndex(session)
 
 
 def _citation_out(c: Citation) -> CitationOut:

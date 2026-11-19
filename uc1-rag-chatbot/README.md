@@ -2,7 +2,7 @@
 
 A retrieval-augmented chatbot that answers EU sustainability reporting questions from a controlled library of public sources, with citations and date-aware answers.
 
-**Stack as built:** Python 3.12, FastAPI, SQLAlchemy with Alembic (SQLite locally, PostgreSQL by changing `DATABASE_URL`), Gemini for chat and embeddings, local hybrid search, React (Vite), Tailwind CSS, Lucide icons. The Azure stack in the program brief is the design target; see the deviation in the [solution design](docs/solution-design.md).
+**Stack as built:** Python 3.12, FastAPI, SQLAlchemy with Alembic (SQLite locally, PostgreSQL by changing `DATABASE_URL`), Gemini for chat and embeddings, local vector search (switchable to hybrid with `SEARCH_BACKEND`), React (Vite), Tailwind CSS, Lucide icons. The Azure stack in the program brief is the design target; see the deviation in the [solution design](docs/solution-design.md).
 
 **Status:** working end to end. 40 backend tests pass and 18 to 19 of 20 evaluation questions are correct.
 
