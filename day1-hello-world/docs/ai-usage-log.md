@@ -22,6 +22,9 @@ Tools used: Claude Code (pair programmer).
 | 2026-11-18 | UC1 backend foundation | Build the schema, migration and date-aware version lookup | SQLAlchemy models, an Alembic migration, `versions.py` and 7 tests | Ran the migration (8 tables created) and the tests |
 | 2026-11-19 | Design doc update | Rewrite the design to match a local build, since there is no Azure access | Section 1.1 "Deviation from the required stack" and relabelled Azure options as target, local as pilot | Checked that no claim says Azure was deployed |
 | 2026-11-19 | UC1 chunking and ingestion | Build document chunking and versioned ingestion | `chunking.py`, `ingestion.py` and 13 new tests (20 total passing) | Ran the full test suite |
+| 2026-11-19 | UC1 source library | Collect public EU sustainability reporting documents | `collect_sources.py`, 10 documents (2.1 MB) in `data/sources/` and `sources.csv` | I approved the download list. Checked each legal text's title and in-force date against the Official Journal wording. The EUR-Lex bot check was not bypassed |
+| 2026-11-19 | UC1 data loading | Load the library into the database | `load_sources.py`: 7 documents, 10 versions, 2,047 chunks, versions chained by date | Checked the version dates and end dates in the database |
+| 2026-11-19 | UC1 embeddings and search | Add embeddings and local hybrid search with date and country filters | `embeddings.py`, `search.py`, `embed_chunks.py`, a migration and 5 new tests (25 passing) | Tests use a fake embedder. The live Gemini embedding call was run on 50 chunks before the full run |
 
 ## What I built or decided myself
 

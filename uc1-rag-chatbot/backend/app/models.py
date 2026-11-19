@@ -68,6 +68,16 @@ class Chunk(Base):
     version: Mapped[DocumentVersion] = relationship(back_populates="chunks")
 
 
+class ChunkEmbedding(Base):
+    """One embedding vector per chunk. Kept apart from chunks so the model can be swapped."""
+
+    __tablename__ = "chunk_embeddings"
+
+    chunk_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("chunks.id"), primary_key=True)
+    model: Mapped[str] = mapped_column(String(100))
+    vector: Mapped[list[float]] = mapped_column(JSON)
+
+
 class Conversation(Base):
     __tablename__ = "conversations"
 
