@@ -1,6 +1,6 @@
 # Evaluation results
 
-Run on 2026-11-19 with 20 questions from `data/eval_questions.json`.
+Run on 2026-11-19 with the first 20 questions of `data/eval_questions.json`. The file now holds 40 questions (ids 21 to 40 were added on 2026-11-19, after this run), so a rerun is not directly comparable.
 
 - Overall: 18 of 20 correct (90%)
 - answerable: 7 of 8

@@ -1,6 +1,6 @@
 # Evaluation results
 
-Run on 2026-11-19 with 20 questions from `data/eval_questions.json`.
+Run on 2026-11-19 with the first 20 questions of `data/eval_questions.json` (the file now holds 40).
 
 - Overall: 17 of 20 correct (85%)
 - answerable: 6 of 8
