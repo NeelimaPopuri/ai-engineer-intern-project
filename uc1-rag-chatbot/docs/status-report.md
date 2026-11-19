@@ -17,7 +17,7 @@ The chatbot works end to end on a local stack. It answers EU sustainability repo
 | Correct refusals | 8 of 8 |
 | Median time per question | 2.4s to 3.6s depending on the model |
 | Cost per question | about $0.0005 (model tokens only) |
-| Estimated monthly cost | about $128 for 100 users, about $1,669 for 5,000 users |
+| Estimated monthly cost | about $126 for 100 users, about $1,752 for 5,000 users |
 
 ## Done
 
@@ -39,7 +39,7 @@ The chatbot works end to end on a local stack. It answers EU sustainability repo
 | Small evaluation set (20, target 40) | Scores are indicative | Extend to 40 questions |
 | Results vary between runs | 18 versus 19 of 20 | Report a range, not a single figure |
 | Free tier may use content to improve Google products | Client data must not use it | Paid tier or Azure before any client material |
-| Azure price figures unverified | Infrastructure costs may differ | Check in the Azure pricing calculator |
+| Azure prices are list prices from 2026-11-19 | Actual bills depend on region, discounts and extras not priced | Confirm in the Azure pricing calculator |
 | No UC1 brief from the mentor | Scenario and targets are proposals | Confirm in the next mentor session |
 
 ## Next

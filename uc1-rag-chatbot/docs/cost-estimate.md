@@ -45,25 +45,35 @@ Chat input is about 57 percent of the model cost. Fewer or shorter retrieved sou
 
 ## Infrastructure and storage
 
-These are planning estimates for the Azure target. They are not verified against Azure pricing and must be checked in the Azure pricing calculator before they appear in a client document.
+Standard pay-as-you-go list prices for the Azure target, East US, from the Azure Retail Prices API (`prices.azure.com/api/retail/prices`), retrieved 2026-11-19. Monthly figure = hourly price x 730 hours. No reservations, discounts or taxes. Prices change, so confirm in the [Azure pricing calculator](https://azure.microsoft.com/pricing/calculator/) before quoting them to a client.
 
-| Item | Pilot | Production | Notes |
-|---|---|---|---|
-| Backend hosting | about $15 | about $150 | One small container, then three behind a load balancer |
-| Search service (Azure AI Search) | about $75 | about $250 | Pilot as built uses the local index and pays $0 here |
-| PostgreSQL | about $15 | about $100 | Pilot as built uses SQLite and pays $0 |
-| Frontend hosting | $0 | about $10 | Static files |
-| Storage | under $1 | under $5 | Library text is 2.1 MB, vectors about 6 MB, messages grow with use |
+| Item | SKU | Hourly price | Pilot per month | Production per month |
+|---|---|---|---|---|
+| Search service | Pilot: AI Search Basic. Production: Standard S1 | $0.101 and $0.336 | $73.73 | $245.28 |
+| Backend hosting | App Service Linux. Pilot: B1, one instance. Production: S1, three instances | $0.017 and $0.095 | $12.41 | $208.05 (3 x $69.35) |
+| PostgreSQL | Flexible Server. Pilot: Burstable B1MS, 32 GB. Production: General Purpose D2s v3 (2 vCores at $0.0855), 128 GB | $0.017 and $0.171 | $16.09 ($12.41 + $3.68 storage) | $139.55 ($124.83 + $14.72 storage) |
+| Database storage price | Flexible Server storage | $0.115 per GB per month | included above | included above |
+| Document and chat storage | Blob Storage, Hot LRS | $0.0208 per GB per month | $0.02 (1 GB) | $0.10 (5 GB) |
+| Frontend hosting | Served by the same App Service in the pilot. Production: static files in Blob Storage | | $0 | under $1 |
+| **Infrastructure total** | | | **$102.25** | **$593** |
+
+What is not included, and why:
+1. The model is Gemini, so no Azure OpenAI charge appears. Moving to Azure OpenAI changes the token lines, not these.
+2. Azure AI Search semantic ranker is not used. It would add a charge per 1,000 queries.
+3. Outbound data transfer, monitoring, backups beyond the free allowance and a load balancer or gateway are not priced. Add them before quoting a client.
+4. A search service price for Basic and S1 assumes one replica and one partition. The library is 2.1 MB, so the pilot is far below the limits.
 
 ## Monthly total
 
 | | Pilot (100 users) | Production (5,000 users) |
 |---|---|---|
 | Tokens | $23.27 | $1,159.22 |
-| Infrastructure (Azure target) | about $105 | about $510 |
-| **Total** | **about $128** | **about $1,669** |
-| Per user | about $1.28 | about $0.33 |
-| Pilot as built (local stack) | about $38 | not applicable |
+| Infrastructure (Azure target) | $102.25 | $593 |
+| **Total** | **about $126** | **about $1,752** |
+| Per user | about $1.26 | about $0.35 |
+| Pilot as built (Gemini and local search, one B1 App Service) | about $36 | not applicable |
+
+Infrastructure is 81 percent of the pilot cost and 34 percent of production. At pilot size the search service alone ($73.73) costs three times the model tokens, which is a reason to start on Basic and to question whether a pilot needs a managed search service at all.
 
 ## Cost levers
 

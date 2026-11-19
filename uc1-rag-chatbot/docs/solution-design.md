@@ -176,7 +176,7 @@ The program expects a comparison of at least two models. The plan is to build wi
 
 ## 10. Cost
 
-See the [cost estimate](cost-estimate.md): about $128 a month for 100 users and about $1,669 for 5,000 users on the Azure target, with token prices verified on 2026-11-19 and infrastructure figures marked as unverified.
+See the [cost estimate](cost-estimate.md): about $126 a month for 100 users and about $1,752 for 5,000 users on the Azure target. Model prices come from the Gemini pricing page and infrastructure prices from the Azure Retail Prices API, both retrieved on 2026-11-19.
 
 ## 11. Built so far and known limits
 
@@ -196,6 +196,6 @@ See the [cost estimate](cost-estimate.md): about $128 a month for 100 users and 
 
 - Confirm the scenario, success targets and any required models against the UC1 brief.
 - Request access to the shared Azure Resource Group and the issued model keys, then verify which services and models they provide.
-- Verify Azure AI Search feature and tier details cited in section 6, and the infrastructure prices in the cost estimate.
+- Verify the Azure AI Search feature and tier details cited in section 6. The infrastructure prices in the cost estimate are now official list prices, to be confirmed in the Azure pricing calculator.
 - Rerun the evaluation once the embedding quota resets, to measure full hybrid search.
 - A news page (3 July 2026) says the revised ESRS were awaiting scrutiny while the Official Journal text says they took effect on 10 November 2026. The chatbot flags answers that mix such sources but does not decide which statement is right.
