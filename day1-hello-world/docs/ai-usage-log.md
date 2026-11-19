@@ -16,6 +16,12 @@ Tools used: Claude Code (pair programmer).
 | 2026-11-18 | Broken page layout | Find why the page looked unstyled | Found a stale Vite dev server serving unprocessed Tailwind; restarted it | Confirmed the page rendered correctly |
 | 2026-11-18 | Git workflow | Commit and push | Two commits and a branch push | Opened and merged the pull request myself |
 | 2026-11-18 | Cost estimate | Write a pilot and production cost estimate | `docs/cost-estimate.md` with verified Gemini token prices | Token prices verified on Google's pricing page; hosting figures are planning estimates, not yet checked in the Azure pricing calculator |
+| 2026-11-18 | UC1 problem statement | Pick an advanced scenario built on a current market problem, in the style of a professional services firm | Regulatory change navigator for EU sustainability reporting, written up in `uc1-rag-chatbot/docs/problem-statement.md` | Success targets are proposals; regulatory facts are not yet checked against official sources |
+| 2026-11-18 | UC1 database design | Design the database for the chatbot | 8-table schema with an ERD, indexes and five decisions with rejected alternatives in `database-design.md` | Not yet reviewed in a mentor session |
+| 2026-11-18 | UC1 solution design | Write the solution design document | Architecture, data flow, API routes and seven pattern justifications in `solution-design.md` | Azure feature and model claims are marked "verify" and are not yet checked |
+| 2026-11-18 | UC1 backend foundation | Build the schema, migration and date-aware version lookup | SQLAlchemy models, an Alembic migration, `versions.py` and 7 tests | Ran the migration (8 tables created) and the tests |
+| 2026-11-19 | Design doc update | Rewrite the design to match a local build, since there is no Azure access | Section 1.1 "Deviation from the required stack" and relabelled Azure options as target, local as pilot | Checked that no claim says Azure was deployed |
+| 2026-11-19 | UC1 chunking and ingestion | Build document chunking and versioned ingestion | `chunking.py`, `ingestion.py` and 13 new tests (20 total passing) | Ran the full test suite |
 
 ## What I built or decided myself
 
@@ -25,6 +31,9 @@ Tools used: Claude Code (pair programmer).
 - I ran and tested the app together with Claude Code.
 - I opened the pull request and merged it.
 - I reviewed the architecture document.
+- I chose the direction for the UC1 scenario: an advanced case built on a current market problem, in the style of a professional services firm.
+- I decided to build UC1 locally with Gemini because Azure access and the issued model keys were not available.
+- I planned Week 1: two build days, a review day, a demo to friends and a presentation to my mentor.
 
 ## What I can explain
 
