@@ -79,6 +79,18 @@ def test_no_results_refuses(session):
     assert msg.answer_status == "insufficient_evidence"
 
 
+def test_grouped_citation_numbers_are_accepted(session):
+    msg = answer_question(session, make_conversation(session), "Who must report?", FakeIndex(session),
+                          reply("Large companies must report [1, 1]."))
+    assert msg.answer_status == "answered" and len(msg.citations) == 1
+
+
+def test_grouped_citation_with_unknown_number_is_rejected(session):
+    msg = answer_question(session, make_conversation(session), "Who must report?", FakeIndex(session),
+                          reply("Large companies must report [1, 4]."))
+    assert msg.answer_status == "insufficient_evidence"
+
+
 def test_answer_without_citation_is_rejected(session):
     msg = answer_question(session, make_conversation(session), "Who must report?", FakeIndex(session), reply("Large companies."))
     assert msg.answer_status == "insufficient_evidence" and msg.citations == []

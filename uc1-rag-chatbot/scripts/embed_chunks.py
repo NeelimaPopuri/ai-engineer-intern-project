@@ -16,7 +16,7 @@ from sqlalchemy import select  # noqa: E402
 
 from app.db import SessionLocal  # noqa: E402
 from app.embeddings import EMBEDDING_MODEL, EmbeddingError, embed_texts  # noqa: E402
-from app.models import Chunk, ChunkEmbedding  # noqa: E402
+from app.models import Chunk, ChunkEmbedding, DocumentVersion  # noqa: E402
 
 SAVE_EVERY = 100
 
@@ -28,7 +28,12 @@ def main() -> int:
 
     with SessionLocal() as session:
         done = select(ChunkEmbedding.chunk_id)
-        todo = session.scalars(select(Chunk).where(Chunk.id.not_in(done)).order_by(Chunk.version_id, Chunk.ordinal)).all()
+        # Versions still in force first: they answer today's questions. Old versions only matter for past dates.
+        todo = session.scalars(
+            select(Chunk).join(DocumentVersion, Chunk.version_id == DocumentVersion.id)
+            .where(Chunk.id.not_in(done))
+            .order_by(DocumentVersion.effective_to.is_not(None), DocumentVersion.effective_from.desc(), Chunk.version_id, Chunk.ordinal)
+        ).all()
         if limit:
             todo = todo[:limit]
         print(f"{len(todo)} chunks to embed")

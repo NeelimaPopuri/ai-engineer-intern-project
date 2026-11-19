@@ -17,15 +17,15 @@ class EmbeddingError(RuntimeError):
     """The embedding service could not be used."""
 
 
-def _post_with_retry(payload: dict) -> dict:
-    for attempt in range(8):
+def _post_with_retry(payload: dict, attempts: int = 8) -> dict:
+    for attempt in range(attempts):
         res = httpx.post(
             URL.format(model=EMBEDDING_MODEL),
             headers={"x-goog-api-key": settings.gemini_api_key},
             json=payload,
             timeout=60,
         )
-        if res.status_code in (429, 503) and attempt < 7:
+        if res.status_code in (429, 503) and attempt < attempts - 1:
             time.sleep(20 * (attempt + 1))  # rate limited: wait longer each time
             continue
         if res.status_code != 200:
@@ -37,6 +37,7 @@ def _post_with_retry(payload: dict) -> dict:
 def embed_texts(texts: list[str], *, is_query: bool = False) -> list[list[float]]:
     """Embed texts in batches. Documents and questions use different task types."""
     task = "RETRIEVAL_QUERY" if is_query else "RETRIEVAL_DOCUMENT"
+    attempts = 1 if is_query else 8  # a user is waiting on a query: fail fast and let search fall back
     vectors: list[list[float]] = []
     for start in range(0, len(texts), BATCH_SIZE):
         batch = texts[start : start + BATCH_SIZE]
@@ -51,5 +52,5 @@ def embed_texts(texts: list[str], *, is_query: bool = False) -> list[list[float]
                 for t in batch
             ]
         }
-        vectors.extend(item["values"] for item in _post_with_retry(payload)["embeddings"])
+        vectors.extend(item["values"] for item in _post_with_retry(payload, attempts)["embeddings"])
     return vectors

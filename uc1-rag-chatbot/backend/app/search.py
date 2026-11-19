@@ -16,10 +16,13 @@ import numpy as np
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from .embeddings import embed_texts
+from .embeddings import EmbeddingError, embed_texts
 from .models import Chunk, ChunkEmbedding, Document, DocumentVersion
 
 _WORD = re.compile(r"[a-z0-9]+")
+_STOPWORDS = frozenset(
+    "a an and are as at be by can do does for from has have how in is it its of on or that the their this to was what when which who will with must".split()
+)
 RRF_K = 60  # standard constant for reciprocal rank fusion
 
 
@@ -34,7 +37,7 @@ class SearchHit:
     section_ref: str | None
     text: str
     score: float          # merged rank score, used for ordering
-    vector_score: float   # cosine similarity, 0 to 1, used for the "is the evidence good enough" check
+    vector_score: float | None  # cosine similarity (0 to 1); None when the chunk or the query has no vector
     keyword_score: float
 
 
@@ -45,7 +48,7 @@ class SearchIndex(Protocol):
 
 
 def tokenize(text: str) -> list[str]:
-    return _WORD.findall(text.lower())
+    return [w for w in _WORD.findall(text.lower()) if w not in _STOPWORDS]
 
 
 def _bm25(query_terms: list[str], docs: list[list[str]], k1: float = 1.5, b: float = 0.75) -> list[float]:
@@ -71,12 +74,12 @@ class LocalHybridIndex:
         self.embed = embed
 
     def _candidates(self, as_of: date, jurisdiction: str | None):
-        """Chunks whose version was in force on `as_of`, with their vectors."""
+        """Chunks whose version was in force on `as_of`, with their vector if they have one."""
         stmt = (
             select(Chunk, DocumentVersion, Document, ChunkEmbedding)
             .join(DocumentVersion, Chunk.version_id == DocumentVersion.id)
             .join(Document, DocumentVersion.document_id == Document.id)
-            .join(ChunkEmbedding, ChunkEmbedding.chunk_id == Chunk.id)
+            .outerjoin(ChunkEmbedding, ChunkEmbedding.chunk_id == Chunk.id)
             .where(
                 DocumentVersion.status != "draft",
                 DocumentVersion.effective_from <= as_of,
@@ -92,19 +95,28 @@ class LocalHybridIndex:
         if not rows:
             return []
 
-        keyword = _bm25(tokenize(query), [tokenize(r[0].text) for r in rows])
-        matrix = np.array([r[3].vector for r in rows], dtype=np.float32)
-        q = np.array(self.embed([query], is_query=True)[0], dtype=np.float32)
-        norms = np.linalg.norm(matrix, axis=1) * (np.linalg.norm(q) or 1.0)
-        cosine = (matrix @ q) / np.where(norms == 0, 1.0, norms)
+        keyword = np.array(_bm25(tokenize(query), [tokenize(r[0].text) for r in rows]))
 
-        # Merge the two rankings. A chunk that is good at either keywords or meaning rises.
+        # Vector similarity is used for chunks that have a vector, when the query can be embedded.
+        cosine = np.full(len(rows), np.nan)
+        has_vector = np.array([r[3] is not None for r in rows])
+        if has_vector.any():
+            try:
+                q = np.array(self.embed([query], is_query=True)[0], dtype=np.float32)
+            except EmbeddingError:
+                q = None  # embedding quota or outage: fall back to keyword ranking
+            if q is not None:
+                matrix = np.array([r[3].vector for r in rows if r[3] is not None], dtype=np.float32)
+                norms = np.linalg.norm(matrix, axis=1) * (np.linalg.norm(q) or 1.0)
+                cosine[has_vector] = (matrix @ q) / np.where(norms == 0, 1.0, norms)
+
+        # Merge the rankings. A chunk that is good at either keywords or meaning rises.
         fused = np.zeros(len(rows))
-        for scores in (np.array(keyword), cosine):
-            for rank, idx in enumerate(np.argsort(-scores)):
-                if scores is not cosine and scores[idx] == 0:
-                    break  # no keyword match: it earns nothing from the keyword ranking
-                fused[idx] += 1.0 / (RRF_K + rank + 1)
+        for rank, idx in enumerate(i for i in np.argsort(-keyword) if keyword[i] > 0):
+            fused[idx] += 1.0 / (RRF_K + rank + 1)
+        scored = ~np.isnan(cosine)
+        for rank, idx in enumerate(np.flatnonzero(scored)[np.argsort(-cosine[scored])]):
+            fused[idx] += 1.0 / (RRF_K + rank + 1)
 
         hits = []
         for idx in np.argsort(-fused)[:top_k]:
@@ -114,7 +126,7 @@ class LocalHybridIndex:
                     chunk_id=chunk.id, version_id=version.id, document_title=document.title,
                     version_number=version.version_number, effective_from=version.effective_from,
                     effective_to=version.effective_to, section_ref=chunk.section_ref, text=chunk.text,
-                    score=float(fused[idx]), vector_score=float(cosine[idx]), keyword_score=float(keyword[idx]),
+                    score=float(fused[idx]), vector_score=None if np.isnan(cosine[idx]) else float(cosine[idx]), keyword_score=float(keyword[idx]),
                 )
             )
         return hits

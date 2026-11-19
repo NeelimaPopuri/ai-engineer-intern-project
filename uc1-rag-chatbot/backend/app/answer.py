@@ -14,6 +14,8 @@ from .search import SearchHit, SearchIndex
 # Below this best vector similarity the library is treated as having no relevant evidence.
 # Starting value from manual checks; tune it on the evaluation set.
 MIN_VECTOR_SCORE = 0.6
+# Used for chunks that have no vector (embedding quota), where only keyword evidence exists.
+MIN_KEYWORD_SCORE = 8.0
 TOP_K = 6
 
 REFUSAL_TEXT = (
@@ -35,7 +37,13 @@ Sources:
 Question: {question}
 Answer:"""
 
-_CITATION = re.compile(r"\[(\d+)\]")
+_CITATION = re.compile(r"\[(\d+(?:\s*,\s*\d+)*)\]")  # matches [3] and [3, 5]
+
+
+def _has_evidence(hit: SearchHit) -> bool:
+    if hit.vector_score is not None:
+        return hit.vector_score >= MIN_VECTOR_SCORE
+    return hit.keyword_score >= MIN_KEYWORD_SCORE
 
 
 def _source_block(hits: list[SearchHit]) -> str:
@@ -83,12 +91,12 @@ def answer_question(
     session.add(Message(conversation_id=conversation.id, role="user", content=question))
 
     hits = index.search(question, as_of=as_of, jurisdiction=conversation.jurisdiction_filter, top_k=TOP_K)
-    if not hits or max(h.vector_score for h in hits) < MIN_VECTOR_SCORE:
+    if not any(_has_evidence(h) for h in hits):
         return _save_answer(session, conversation, REFUSAL_TEXT, "insufficient_evidence", hits, [], None, started)
 
     reply = llm(PROMPT.format(as_of=as_of.isoformat(), sources=_source_block(hits), question=question))
     text = reply.text
-    numbers = [int(n) for n in _CITATION.findall(text)]
+    numbers = [int(n) for group in _CITATION.findall(text) for n in group.split(",")]
     valid = list(dict.fromkeys(n for n in numbers if 1 <= n <= len(hits)))
 
     # The model must cite real sources. An answer with no valid citation, or that cites a source
