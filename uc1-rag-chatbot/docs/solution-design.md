@@ -1,10 +1,26 @@
 # Solution design: Regulatory change navigator
 
-Use Case 1, RAG knowledge chatbot. Status: draft for review. Items marked "verify" must be checked against official documentation before this document is final.
+Use Case 1, RAG knowledge chatbot. Status: draft for review. Items marked "verify" must be checked against official documentation before this document is final. The pilot runs on a local stack; the Azure services are the design target (see section 1.1).
 
 ## 1. Overview
 
 The system answers EU sustainability reporting questions from a controlled library of public sources. Every answer carries citations, respects the date the user asks about, and says so when the evidence is too weak. The problem, users and success criteria are in the [problem statement](problem-statement.md). The data model is in the [database design](database-design.md).
+
+### 1.1 Deviation from the required stack
+
+The program names Azure AI Search and Azure OpenAI or the Claude API for this use case. No access to the shared Azure Resource Group or the issued model keys was available while building. This is the deviation and how it is handled:
+
+| Item | Required stack | Pilot implementation | Why it is safe to swap |
+|---|---|---|---|
+| Search index | Azure AI Search | Local hybrid search over the database | Search sits behind one interface (`SearchIndex`), so only one class changes |
+| Embeddings | Azure OpenAI embedding model | `gemini-embedding-001` | Embedding calls sit behind one function |
+| Chat model | Azure OpenAI or Claude API | Gemini (`gemini-3.1-flash-lite`) | The model name and client are configuration |
+| Database | PostgreSQL | SQLite, same SQLAlchemy models and Alembic migrations | Only `DATABASE_URL` changes |
+
+What this means for the claims in this document:
+1. The architecture, data model, API design and evaluation are real and tested locally.
+2. Azure AI Search is the target. Sections 6.1 and 6.2 explain why, but nothing here claims it was deployed.
+3. Cost figures for Azure services are estimates from published prices and are not measurements.
 
 ## 2. Architecture
 
@@ -13,7 +29,7 @@ flowchart LR
     U[Browser: React app] -->|"POST /api/v1/conversations/{id}/messages"| API[FastAPI]
     API -->|"1. save question"| DB[(PostgreSQL)]
     API -->|"2. embed query"| EMB[Embedding model]
-    API -->|"3. filtered hybrid search"| AIS[Azure AI Search]
+    API -->|"3. filtered hybrid search"| AIS["Search index<br/>pilot: local, target: Azure AI Search"]
     API -->|"4. read chunk text and version dates"| DB
     API -->|"5. grounded prompt with numbered sources"| LLM[Chat model]
     LLM -->|"answer with citation numbers"| API
@@ -34,7 +50,7 @@ Every arrow is one call. Steps 1 to 6 run in order for each question. The ingest
 | Services | `RetrievalService` (search and date filtering), `AnswerService` (prompt, model call, citation checks), `IngestionService` (split, embed, index). |
 | Data access | PostgreSQL through SQLAlchemy; Azure AI Search through its client. |
 | PostgreSQL | System of record: documents, versions, chunks, conversations, messages, citations. |
-| Azure AI Search | Finds relevant chunks by keyword and meaning, with metadata filters. |
+| Search index | Finds relevant chunks by keyword and meaning, with metadata filters. Pilot: local implementation. Target: Azure AI Search. |
 | Chat model | Writes the answer using only the sources it is given. |
 
 ## 4. Data flow for one question
@@ -76,13 +92,14 @@ Each decision names the options considered. Claims about product features are ma
 | Vector search only | Simple | Misses exact references like "Article 29b"; weak on identifiers |
 | Keyword search only | Precise for exact terms | Misses paraphrased questions |
 
-Chosen because regulatory questions mix exact references and plain-language wording. Verify that hybrid search and filters are available on the Azure AI Search tier in the shared Resource Group.
+Chosen because regulatory questions mix exact references and plain-language wording. The pilot implements this locally by combining keyword scores with embedding similarity. Verify that hybrid search and filters are available on the Azure AI Search tier in the shared Resource Group before the move.
 
 ### 6.2 Vector store
 
 | Option | Pros | Cons |
 |---|---|---|
-| **Azure AI Search** (chosen) | Required stack for UC1; hybrid search and metadata filters in one service; managed | Second datastore to keep in sync; cost grows with tier |
+| **Azure AI Search** (target) | Required stack for UC1; hybrid search and metadata filters in one service; managed | Second datastore to keep in sync; cost grows with tier; not available during the pilot build |
+| **Local search behind an interface** (pilot) | Works without Azure access; same filters and scoring ideas; easy to test | Does not scale; no managed ranking features |
 | `pgvector` in PostgreSQL | One datastore; relational joins with metadata; lowest cost | Outside the required stack; weaker hybrid search tooling; slower at large scale |
 | FAISS | Fast, free, runs locally | No filtering or persistence by default; nothing managed; not suitable for production |
 
@@ -100,11 +117,12 @@ Chunk size and overlap will be tuned on the evaluation set, not guessed.
 
 | Option | Pros | Cons |
 |---|---|---|
-| **Azure OpenAI chat model** (chosen if available in the Resource Group) | Same cloud as search; no data leaves Azure; one bill | Depends on the models granted to the group |
+| **Azure OpenAI chat model** (target, if available in the Resource Group) | Same cloud as search; no data leaves Azure; one bill | Depends on the models granted to the group; not available during the pilot build |
+| **Gemini** (pilot) | Free tier; works now; has an embedding model | Different provider from the target; free-tier limits and occasional overload |
 | Claude API | Strong at following citation instructions; useful for the program's required model comparison | Separate provider; Claude has no embedding model, so an Azure embedding model is still needed |
 | Small open-source model | Lowest cost | Weaker answer quality; hosting effort |
 
-The program expects a comparison of at least two models. The plan is to build with one and run the evaluation set against a second, reporting accuracy, cost and speed. Verify which models are available in the shared Resource Group.
+The program expects a comparison of at least two models. The plan is to build with one and run the evaluation set against a second, reporting accuracy, cost and speed. Verify which models are available in the shared Resource Group once access is granted.
 
 ### 6.5 Handling changing rules
 
@@ -163,6 +181,6 @@ The cost estimate for this use case will be written after the model choice is co
 ## 11. Open items
 
 - Confirm the scenario, success targets and any required models against the UC1 brief.
-- Verify which Azure services and models the shared Resource Group provides.
+- Request access to the shared Azure Resource Group and the issued model keys, then verify which services and models they provide.
 - Verify Azure AI Search feature and tier details cited in section 6.
 - Collect and check the public source documents, and record the official source and version date of each.
