@@ -29,6 +29,9 @@ Tools used: Claude Code (pair programmer).
 | 2026-11-19 | UC1 evaluation | Write 20 test questions and a scoring script | `eval_questions.json`, `run_eval.py`, `evaluation-results.md`: 19 of 20 correct | I checked the expected facts against the source texts. One expectation was wrong and was corrected with a written reason, not tuned to pass |
 | 2026-11-19 | UC1 chat screen | Build the React chat page with date and country filters | `uc1-rag-chatbot/frontend/` | Tried it in the browser: cited answer for 2026, refusal for 2024. Found and fixed a crash in the scroll effect |
 | 2026-11-19 | UC1 cost estimate | Write the pilot and production cost estimate | `uc1-rag-chatbot/docs/cost-estimate.md` | Model and embedding prices read from Google's pricing page. Azure infrastructure prices are estimates and not verified |
+| 2026-11-19 | UC1 source flag and citation numbering | Flag answers that mix legal text with news pages, and renumber citation markers to match saved ranks | Changes in `answer.py` and 3 new tests (40 passing). The numbering bug was reported by another Claude session working for me | Tests pass. The second session did not edit any files |
+| 2026-11-19 | UC1 model comparison | Run the same 20 questions on a second Gemini model | `model-comparison.md`: 18 of 20 against 17 of 20, with cost and speed | Prices read from Google's pricing page. Results vary between runs, so the gap is reported as noise, not a ranking |
+| 2026-11-19 | UC1 status report and deck | Write the status report and a 13-slide deck | `status-report.md` and `uc1-deck.pptx` | Deck opens and has 13 slides. I could not render it here (no LibreOffice), so look at every slide before presenting |
 
 ## What I built or decided myself
 

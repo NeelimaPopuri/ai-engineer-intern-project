@@ -37,6 +37,12 @@ Sources:
 Question: {question}
 Answer:"""
 
+LEGAL_TYPES = {"directive", "regulation"}
+CONFLICT_NOTE = (
+    "\n\nNote: these sources have different authority. The legal text (directive or regulation) "
+    "prevails over news or guidance pages, which may be out of date."
+)
+
 _CITATION = re.compile(r"\[(\d+(?:\s*,\s*\d+)*)\]")  # matches [3] and [3, 5]
 
 
@@ -44,6 +50,17 @@ def _has_evidence(hit: SearchHit) -> bool:
     if hit.vector_score is not None:
         return hit.vector_score >= MIN_VECTOR_SCORE
     return hit.keyword_score >= MIN_KEYWORD_SCORE
+
+
+def _renumber(text: str, valid: list[int]) -> str:
+    """Make the [n] markers match the saved citation ranks (1, 2, 3 in order of first citation)."""
+    new_number = {old: new for new, old in enumerate(valid, start=1)}
+
+    def swap(match: re.Match) -> str:
+        olds = [int(n) for n in match.group(1).split(",")]
+        return "[" + ", ".join(str(n) for n in dict.fromkeys(new_number[o] for o in olds)) + "]"
+
+    return _CITATION.sub(swap, text)
 
 
 def _source_block(hits: list[SearchHit]) -> str:
@@ -103,4 +120,8 @@ def answer_question(
     # that was never supplied, is not trusted.
     if text.strip().upper().startswith("INSUFFICIENT") or not valid or len(valid) != len(set(numbers)):
         return _save_answer(session, conversation, REFUSAL_TEXT, "insufficient_evidence", hits, [], reply, started)
+    text = _renumber(text, valid)
+    cited_types = {hits[n - 1].document_type for n in valid}
+    if cited_types & LEGAL_TYPES and cited_types - LEGAL_TYPES:
+        return _save_answer(session, conversation, text + CONFLICT_NOTE, "conflict", hits, valid, reply, started)
     return _save_answer(session, conversation, text, "answered", hits, valid, reply, started)

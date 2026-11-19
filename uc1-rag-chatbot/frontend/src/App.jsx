@@ -45,6 +45,11 @@ function Message({ m }) {
   const refused = m.answer_status === "insufficient_evidence";
   return (
     <div className="card max-w-[95%] p-4 text-sm">
+      {m.answer_status === "conflict" && (
+        <p className="mb-2 flex items-center gap-2 text-xs font-medium text-amber-300">
+          <ShieldAlert size={14} strokeWidth={2} /> Sources of different authority: legal text prevails
+        </p>
+      )}
       {refused && (
         <p className="mb-2 flex items-center gap-2 text-xs font-medium text-amber-300">
           <ShieldAlert size={14} strokeWidth={2} /> Not enough evidence in the source library

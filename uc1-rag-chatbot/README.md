@@ -4,7 +4,7 @@ A retrieval-augmented chatbot that answers EU sustainability reporting questions
 
 **Stack as built:** Python 3.12, FastAPI, SQLAlchemy with Alembic (SQLite locally, PostgreSQL by changing `DATABASE_URL`), Gemini for chat and embeddings, local hybrid search, React (Vite), Tailwind CSS, Lucide icons. The Azure stack in the program brief is the design target; see the deviation in the [solution design](docs/solution-design.md).
 
-**Status:** working end to end. 37 backend tests pass and 19 of 20 evaluation questions are correct.
+**Status:** working end to end. 40 backend tests pass and 18 to 19 of 20 evaluation questions are correct.
 
 ## Documents
 
@@ -13,6 +13,8 @@ A retrieval-augmented chatbot that answers EU sustainability reporting questions
 - [Solution design](docs/solution-design.md)
 - [Cost estimate](docs/cost-estimate.md)
 - [Evaluation results](docs/evaluation-results.md)
+- [Model comparison](docs/model-comparison.md)
+- [Status report](docs/status-report.md)
 
 ## Run it
 
@@ -47,5 +49,5 @@ Other commands, from `backend`:
 
 1. Confirm the scenario against the UC1 brief.
 2. Get Azure access and issued keys, then swap in Azure AI Search and Azure OpenAI.
-3. Rerun the evaluation after the embedding quota resets, and compare a second model.
-4. Add conflict detection between sources and the company-size filter.
+3. Rerun the evaluation with 40 questions after the embedding quota resets.
+4. Compare a Claude or Azure OpenAI model once keys are available.

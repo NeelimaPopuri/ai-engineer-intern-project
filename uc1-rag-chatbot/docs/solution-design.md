@@ -187,8 +187,10 @@ See the [cost estimate](cost-estimate.md): about $128 a month for 100 users and 
 | Search | Hybrid ranking for chunks with vectors; keyword-only ranking for the rest and whenever the query cannot be embedded |
 | Chat API | Conversations, cited answers, refusal on weak evidence, citation validation, 401/404/422/502 codes |
 | Chat screen | React app with date and jurisdiction filters and an expandable citation panel |
-| Evaluation | 20 questions, 19 correct (see [evaluation results](evaluation-results.md)) |
-| Not built | Company-size filter in search, `POST /documents` upload, conflict status between sources, second-model comparison |
+| Evaluation | 20 questions, 18 to 19 correct on repeated runs (see [evaluation results](evaluation-results.md) and [model comparison](model-comparison.md)) |
+| Source conflicts | Answers that cite both legal text and news or guidance pages are flagged, with a note that the legal text prevails |
+| Not built | `POST /documents` upload |
+| Dropped on purpose | Company-size filter. Size thresholds are written inside the legal text, not stored as metadata on a document, so a filter would be invented data. Questions about size are answered from the text itself |
 
 ## 12. Open items
 
@@ -196,4 +198,4 @@ See the [cost estimate](cost-estimate.md): about $128 a month for 100 users and 
 - Request access to the shared Azure Resource Group and the issued model keys, then verify which services and models they provide.
 - Verify Azure AI Search feature and tier details cited in section 6, and the infrastructure prices in the cost estimate.
 - Rerun the evaluation once the embedding quota resets, to measure full hybrid search.
-- The library holds public sources only. A news page (3 July 2026) says the revised ESRS were awaiting scrutiny while the Official Journal text says they took effect on 10 November 2026. The chatbot does not yet flag conflicts like this.
+- A news page (3 July 2026) says the revised ESRS were awaiting scrutiny while the Official Journal text says they took effect on 10 November 2026. The chatbot flags answers that mix such sources but does not decide which statement is right.

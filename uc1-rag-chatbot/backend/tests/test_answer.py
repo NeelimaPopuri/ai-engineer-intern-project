@@ -35,16 +35,20 @@ def session():
 
 
 class FakeIndex:
-    def __init__(self, session, vector_score=0.8, empty=False):
-        self.session, self.vector_score, self.empty = session, vector_score, empty
+    def __init__(self, session, vector_score=0.8, empty=False, extra_news=False):
+        self.session, self.vector_score, self.empty, self.extra_news = session, vector_score, empty, extra_news
 
     def search(self, query, *, as_of, jurisdiction=None, top_k=8):
         if self.empty:
             return []
         chunk = self.session.scalars(select(Chunk)).first()
         version = chunk.version
-        return [SearchHit(chunk.id, version.id, "Rule", 1, version.effective_from, None, chunk.section_ref,
+        hits = [SearchHit(chunk.id, version.id, "Rule", 1, version.effective_from, None, chunk.section_ref,
                           chunk.text, 0.03, self.vector_score, 2.0)]
+        if self.extra_news:
+            hits.append(SearchHit(chunk.id, version.id, "News", 1, version.effective_from, None, None,
+                                  "News text", 0.02, self.vector_score, 1.0, document_type="news"))
+        return hits
 
 
 def reply(text):
@@ -89,6 +93,29 @@ def test_grouped_citation_with_unknown_number_is_rejected(session):
     msg = answer_question(session, make_conversation(session), "Who must report?", FakeIndex(session),
                           reply("Large companies must report [1, 4]."))
     assert msg.answer_status == "insufficient_evidence"
+
+
+def test_legal_and_news_sources_together_are_flagged(session):
+    msg = answer_question(session, make_conversation(session), "Who must report?", FakeIndex(session, extra_news=True),
+                          reply("Large companies must report [1] and [2]."))
+    assert msg.answer_status == "conflict" and "different authority" in msg.content
+
+
+def test_legal_source_alone_is_not_flagged(session):
+    msg = answer_question(session, make_conversation(session), "Who must report?", FakeIndex(session, extra_news=True),
+                          reply("Large companies must report [1]."))
+    assert msg.answer_status == "answered"
+
+
+def test_markers_are_renumbered_to_match_citation_ranks(session):
+    class ThreeHits(FakeIndex):
+        def search(self, *args, **kwargs):
+            return super().search(*args, **kwargs) * 3
+
+    msg = answer_question(session, make_conversation(session), "Who must report?", ThreeHits(session),
+                          reply("Companies report [3]. Large ones also [3, 1]."))
+    assert msg.content == "Companies report [1]. Large ones also [1, 2]."
+    assert [c.rank for c in msg.citations] == [1, 2]
 
 
 def test_answer_without_citation_is_rejected(session):

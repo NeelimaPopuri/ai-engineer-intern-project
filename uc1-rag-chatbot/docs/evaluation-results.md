@@ -2,11 +2,13 @@
 
 Run on 2026-11-19 with 20 questions from `data/eval_questions.json`.
 
-- Overall: 19 of 20 correct (95%)
+- Overall: 18 of 20 correct (90%)
 - answerable: 7 of 8
-- date: 4 of 4
+- date: 3 of 4
 - refuse: 8 of 8
+- Model: gemini-3.1-flash-lite
 - Median time per question: 3.6s
+- Tokens: 28,604 in, 1,411 out, about $0.0093 for the run (0.00046 per question)
 
 | # | Group | Question | Result | Note |
 |---|---|---|---|---|
@@ -21,7 +23,7 @@ Run on 2026-11-19 with 20 questions from `data/eval_questions.json`.
 | 9 | date | How many employees must a public-interest entity have for the reporting rules to apply? | pass | correct source cited |
 | 10 | date | What net turnover and employee numbers can Member States use to exempt undertakings from the sustainability reporting measures? | pass | refused |
 | 11 | date | Which large undertakings must publish sustainability information? | pass | refused |
-| 12 | date | What does the revised ESRS regulation require? | pass | correct source cited |
+| 12 | date | What does the revised ESRS regulation require? | fail | answered but wrong source or version |
 | 13 | refuse | What is the capital of France? | pass | refused |
 | 14 | refuse | What is the corporate tax rate in Germany? | pass | refused |
 | 15 | refuse | Which stock should I buy this year? | pass | refused |
@@ -33,8 +35,9 @@ Run on 2026-11-19 with 20 questions from `data/eval_questions.json`.
 
 ## Conditions and limits of this run
 
-- Search ran mostly in keyword fallback. The Gemini free tier allows 1,000 embedding requests a day, which was used up while embedding the library, so query embeddings failed and search fell back to keyword ranking. Only 950 of 2,047 chunks have vectors, and the team decided to keep that set.
-- The one failure (#6, revised ESRS start year) is a fallback effect: the revised ESRS chunks have vectors but no keyword overlap with the question, and the query could not be embedded. A rerun after the quota resets will test full hybrid search.
+- Search ran mostly in keyword fallback. The Gemini free tier allows 1,000 embedding requests a day, which was used up while embedding the library, so query embeddings failed and search fell back to keyword ranking. Only 950 of 2,047 chunks have vectors, and the decision is to keep that set.
+- Results move between runs. The same model and questions scored 19 of 20 on one run and 18 of 20 on the next, because the model's wording changes. Treat the score as a range of 18 to 19, not an exact figure.
 - Question 10 was changed from "answer" to "refuse" after the first run. The 450m turnover and 1,000 employee exemption was added by Omnibus I in 2026, so the 2024 text has no answer. The model was right to refuse.
 - A parsing bug was found and fixed during the first run: the model writes citations like [4, 6] and the check only accepted [4].
 - 20 questions is a small set. The design targeted 40, so the percentages are indicative, not a measurement of production quality.
+- The run script rewrites this file, so keep any notes below this line when rerunning.

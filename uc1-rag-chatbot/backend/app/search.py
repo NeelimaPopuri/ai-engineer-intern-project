@@ -39,6 +39,7 @@ class SearchHit:
     score: float          # merged rank score, used for ordering
     vector_score: float | None  # cosine similarity (0 to 1); None when the chunk or the query has no vector
     keyword_score: float
+    document_type: str = "directive"
 
 
 class SearchIndex(Protocol):
@@ -126,7 +127,7 @@ class LocalHybridIndex:
                     chunk_id=chunk.id, version_id=version.id, document_title=document.title,
                     version_number=version.version_number, effective_from=version.effective_from,
                     effective_to=version.effective_to, section_ref=chunk.section_ref, text=chunk.text,
-                    score=float(fused[idx]), vector_score=None if np.isnan(cosine[idx]) else float(cosine[idx]), keyword_score=float(keyword[idx]),
+                    score=float(fused[idx]), vector_score=None if np.isnan(cosine[idx]) else float(cosine[idx]), keyword_score=float(keyword[idx]), document_type=document.document_type,
                 )
             )
         return hits
