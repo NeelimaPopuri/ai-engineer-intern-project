@@ -55,6 +55,9 @@ This is the "what are the options" part of the project. Know one sentence for ea
 | In-memory vector index (numpy) | The vectors sit in one matrix; a question is compared with all allowed rows in about 16 ms | **Used.** No native components, so it runs under this machine's Windows security policy |
 | ChromaDB, Qdrant local, FAISS | Real vector databases and libraries | All three were tried and failed to load here: Application Control blocks their native files |
 | pgvector (PostgreSQL) | Vector search inside the main database | Outside the required stack; a good option if Azure is not used |
+| MongoDB Atlas, Cosmos DB for MongoDB | A document database with vector search | Our data is versioned and relational, and the brief names PostgreSQL. Switch if the content became schema-free |
+| Pinecone, Weaviate | Managed or self-hosted vector databases | No benefit at 2,047 chunks and another place holding regulated text. Reconsider at millions of chunks |
+| Elasticsearch, OpenSearch | Keyword plus vector search in one cluster | Needs a cluster to run. Azure AI Search covers the same ground in the target |
 
 ### Cutting documents into pieces (chunking)
 
@@ -71,6 +74,8 @@ Gemini 3.1 Flash-Lite for answers and gemini-embedding-001 for vectors. Compared
 ## Questions your mentor may ask, with honest answers
 
 **Why not Azure AI Search, as the brief says?** I had no access to the shared resource group and no issued keys. I built behind interfaces, so search and the model are each one class to swap. None of the Azure claims in the design were tested, and the doc marks them "verify".
+
+**Why not MongoDB, Pinecone, Weaviate or Cosmos DB?** Each is a fair option under the right conditions, and the design doc lists the condition for each in section 6.2. For this project the data is versioned and relational, the library is only 2,047 chunks, and the brief names PostgreSQL and Azure AI Search. None of them gives a benefit that justifies another system.
 
 **Why a numpy matrix and not a vector database?** I tried Chroma, Qdrant and FAISS. Windows Application Control blocked all three on this machine. The matrix has the same behavior (filter, then cosine similarity) and is easy to explain. At 2,047 chunks it takes about 16 ms. It would not scale to millions of chunks, which is where Azure AI Search or pgvector comes in.
 

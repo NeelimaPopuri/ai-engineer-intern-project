@@ -127,8 +127,27 @@ Each decision is recorded the same way: what we chose, why it beats the alternat
 | **Azure AI Search** (target) | Required stack; hybrid search and filters in one managed service | Second datastore to keep in sync; cost grows with tier; no access during the pilot |
 | `pgvector` in PostgreSQL | One datastore; joins with metadata; lowest cost | Outside the required stack; needs a PostgreSQL server the pilot does not run |
 | ChromaDB, Qdrant local, FAISS | Purpose-built vector stores | Failed to load on the pilot machine; would need an IT allow-list or a container |
+| MongoDB Atlas Vector Search | Documents, metadata and vectors in one store; flexible schema | Our data is relational: documents have versions, versions have chunks, citations point at chunks. The date-range version lookup and the rule that every citation must point to a real chunk are natural in SQL and awkward in a document store. It is also outside the named stack and adds a second database technology. Verify Atlas availability and feature details before relying on it |
+| Azure Cosmos DB for MongoDB (vCore) with vector search | Azure-native, MongoDB-compatible, vectors beside documents | Same document-model mismatch as MongoDB, and not the stack the UC1 brief names. Verify vector search support and region availability |
+| Pinecone, Weaviate (managed vector databases) | Built for vectors, simple APIs, scale without effort | Another vendor holding a copy of the regulated text, and no benefit at 2,047 chunks. Worth reconsidering only if the library grows to millions of chunks |
+| Elasticsearch or OpenSearch | Mature keyword plus vector search with filters | Needs a cluster to run, which is heavier than this service needs, and duplicates what Azure AI Search provides in the target |
 
 **Trade-off accepted.** No scaling headroom. At 100 times the load the index moves to Azure AI Search, which the interface makes a one-class change.
+
+**Reading the options by family.** Vector libraries (FAISS) and embedded vector databases (ChromaDB, Qdrant local) fail on this machine's policy. Vector extensions to a database we already run (pgvector) need a PostgreSQL server the pilot does not have. Document databases (MongoDB, Cosmos DB) fit schema-free content, but our content is versioned and relational. Managed vector services (Pinecone, Weaviate, Azure AI Search) are the right shape for scale, and of those only Azure AI Search is the named target.
+
+**When we would reconsider each option.** None of these is rejected for good. Each has a condition under which it becomes the better choice for this project.
+
+| Option | We would switch to it if |
+|---|---|
+| Azure AI Search | Azure access is granted. It is the target and the first move |
+| `pgvector` | Azure AI Search is unavailable or too costly, and a PostgreSQL server is available. It is the cheapest fallback and keeps everything in one database |
+| Pinecone | The library grows past what one machine holds in memory, and the client accepts a non-Azure service holding the text |
+| Weaviate | We need built-in hybrid search on infrastructure we run ourselves, and the security policy allows its client (it depends on `grpc`, which was blocked here) |
+| Azure Cosmos DB for MongoDB (vCore) | The platform team standardises on Cosmos DB and wants conversations, messages and vectors in one Azure service. Verify vector search support and tier first |
+| MongoDB Atlas | The firm already runs Atlas and the content becomes schema-free rather than versioned and relational |
+| Elasticsearch or OpenSearch | The firm already operates a cluster and wants keyword and vector search in one place |
+| ChromaDB, Qdrant, FAISS | The security policy allows their native components. Qdrant or ChromaDB would then replace the in-memory index with no other change, because search sits behind `SearchIndex` |
 
 ### 6.3 Chunking strategy
 
