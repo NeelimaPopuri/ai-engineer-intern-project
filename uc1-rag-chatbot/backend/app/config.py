@@ -8,8 +8,12 @@ class Settings(BaseSettings):
     app_api_key: str
     gemini_api_key: str
     gemini_model: str = "gemini-3.1-flash-lite"
-    # "vector" = vector search with keyword fallback; "hybrid" = keywords plus vectors merged
+    # "vector" = local vector search with keyword fallback; "hybrid" = keywords plus vectors merged;
+    # "pinecone" = Pinecone first, then the local vector search if Pinecone cannot be used
     search_backend: str = "vector"
+    pinecone_api_key: str = ""
+    pinecone_index_host: str = ""  # shown in the Pinecone console, like xxxx.svc.xxxx.pinecone.io
+    pinecone_namespace: str = "uc1"
 
 
 settings = Settings()

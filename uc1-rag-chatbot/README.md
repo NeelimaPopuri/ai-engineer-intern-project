@@ -15,6 +15,7 @@ A retrieval-augmented chatbot that answers EU sustainability reporting questions
 - [Evaluation results](docs/evaluation-results.md)
 - [Model comparison](docs/model-comparison.md)
 - [Status report](docs/status-report.md)
+- [Pinecone setup](docs/pinecone-setup.md) (optional vector store)
 
 ## Run it
 

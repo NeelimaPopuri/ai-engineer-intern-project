@@ -15,6 +15,7 @@ from .db import get_session
 from .embeddings import EmbeddingError
 from .llm import LLMError
 from .models import Citation, Conversation, Document, DocumentVersion
+from .pinecone_index import PineconeFallbackIndex
 from .search import FallbackIndex, LocalHybridIndex, SearchIndex
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -102,6 +103,8 @@ class ConversationOut(BaseModel):
 def get_index(session: Session = Depends(get_session)) -> SearchIndex:
     if settings.search_backend == "hybrid":
         return LocalHybridIndex(session)
+    if settings.search_backend == "pinecone":
+        return PineconeFallbackIndex(session)
     return FallbackIndex(session)
 
 

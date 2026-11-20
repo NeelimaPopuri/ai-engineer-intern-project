@@ -22,6 +22,7 @@ from app.db import SessionLocal  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.llm import LLMError  # noqa: E402
 from app.models import Chunk, ChunkEmbedding, Conversation  # noqa: E402
+from app.pinecone_index import PineconeFallbackIndex  # noqa: E402
 from app.search import FallbackIndex, LocalHybridIndex  # noqa: E402
 
 
@@ -68,7 +69,8 @@ def main() -> int:
     rows, latencies, tokens_in, tokens_out = [], [], 0, 0
     with SessionLocal() as session:
         # Same choice the API makes, so the evaluation measures what the app does.
-        index = RecordingIndex(LocalHybridIndex(session) if settings.search_backend == "hybrid" else FallbackIndex(session))
+        backends = {"hybrid": LocalHybridIndex, "pinecone": PineconeFallbackIndex}
+        index = RecordingIndex(backends.get(settings.search_backend, FallbackIndex)(session))
         for q in questions:
             conversation = Conversation(as_of_date=date.fromisoformat(q["as_of"]))
             session.add(conversation)

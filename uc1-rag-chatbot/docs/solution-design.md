@@ -142,7 +142,7 @@ Each decision is recorded the same way: what we chose, why it beats the alternat
 |---|---|
 | Azure AI Search | Azure access is granted. It is the target and the first move |
 | `pgvector` | Azure AI Search is unavailable or too costly, and a PostgreSQL server is available. It is the cheapest fallback and keeps everything in one database |
-| Pinecone | The library grows past what one machine holds in memory, and the client accepts a non-Azure service holding the text |
+| Pinecone | The library grows past what one machine holds in memory, and the client accepts a non-Azure service holding the text. An adapter already exists (`SEARCH_BACKEND=pinecone`, see [setup](pinecone-setup.md)) and is tested against a fake service. It has not been run against a live index |
 | Weaviate | We need built-in hybrid search on infrastructure we run ourselves, and the security policy allows its client (it depends on `grpc`, which was blocked here) |
 | Azure Cosmos DB for MongoDB (vCore) | The platform team standardises on Cosmos DB and wants conversations, messages and vectors in one Azure service. Verify vector search support and tier first |
 | MongoDB Atlas | The firm already runs Atlas and the content becomes schema-free rather than versioned and relational |
