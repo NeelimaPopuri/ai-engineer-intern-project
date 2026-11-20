@@ -29,7 +29,7 @@ flowchart LR
     U[Browser: React app] -->|"POST /api/v1/conversations/{id}/messages"| API[FastAPI]
     API -->|"1. save question"| DB[(PostgreSQL)]
     API -->|"2. embed query"| EMB[Embedding model]
-    API -->|"3. filtered hybrid search"| AIS["Search index<br/>pilot: local, target: Azure AI Search"]
+    API -->|"3. date and country filter, then vector search"| AIS["Search index<br/>pilot: local, target: Azure AI Search"]
     API -->|"4. read chunk text and version dates"| DB
     API -->|"5. grounded prompt with numbered sources"| LLM[Chat model]
     LLM -->|"answer with citation numbers"| API
@@ -45,19 +45,19 @@ Every arrow is one call. Steps 1 to 6 run in order for each question. The ingest
 
 | Component | Responsibility |
 |---|---|
-| React app | Chat screen, filters (country, company size, date), citation panel, conversation list. Shares the DataFactZ layout shell from Day 1. |
+| React app | Chat screen, filters (country, date), citation panel, conversation list. Shares the DataFactZ layout shell from Day 1. |
 | FastAPI routers | HTTP only: validate input, check the API key, return typed responses. No business logic. |
-| Services | `RetrievalService` (search and date filtering), `AnswerService` (prompt, model call, citation checks), `IngestionService` (split, embed, index). |
+| Services | Search (`search.py`: date filtering and ranking), answers (`answer.py`: prompt, model call, citation checks), ingestion (`ingestion.py`: split, version, store), embeddings (`embeddings.py`). |
 | Data access | PostgreSQL through SQLAlchemy; Azure AI Search through its client. |
 | PostgreSQL | System of record: documents, versions, chunks, conversations, messages, citations. |
-| Search index | Finds relevant chunks by keyword and meaning, with metadata filters. Pilot: local implementation. Target: Azure AI Search. |
+| Search index | Finds relevant chunks by meaning after filtering by date and country; falls back to keywords when a question cannot be embedded. Pilot: in-memory vector index. Target: Azure AI Search. |
 | Chat model | Writes the answer using only the sources it is given. |
 
 ## 4. Data flow for one question
 
-1. The API saves the question and the filters (country, company size, as-of date).
+1. The API saves the question and the filters (country and as-of date).
 2. The question is turned into an embedding.
-3. Azure AI Search runs a hybrid search (keywords plus meaning) with filters on country, company size, and `effective_from <= as_of_date < effective_to`. It returns the top candidates.
+3. The search index keeps only chunks whose version was in force on the as-of date and that match the country filter, then ranks them by similarity to the question. It returns the top candidates. If the question cannot be embedded, keyword ranking is used instead.
 4. The service loads those chunks and their version details from PostgreSQL. If a returned chunk belongs to a superseded version, it is marked.
 5. If the best relevance score is below a threshold, or nothing passes the filters, the API answers `insufficient_evidence` without calling the model.
 6. Otherwise the model receives the question and numbered sources, with instructions to use only those sources and to cite by number.
@@ -80,75 +80,148 @@ All routes are under `/api/v1`, protected by an `X-API-Key` header, with Pydanti
 
 `POST /documents` returns 202 because ingestion runs as a background job.
 
-## 6. Pattern justification
+## 6. Architecture decisions
 
-Each decision names the options considered. Claims about product features are marked "verify" until checked.
+Each decision is recorded the same way: what we chose, why it beats the alternatives, and what about this project drives the choice. Rejected alternatives and their trade-offs follow in the option tables. Claims about product features are marked "verify" until checked against official documentation.
+
+### 6.0 Decision summary
+
+| # | Decision | Why this over the rest | What this project changes |
+|---|---|---|---|
+| 6.1 | Vector search, filtered by date and country first | Users ask in plain language while the law uses its own terms, so matching on meaning beats matching on words | The as-of date is a hard filter applied before ranking, so a superseded paragraph can never outrank the text in force |
+| 6.2 | In-memory vector index behind a `SearchIndex` interface | It is the only vector option that runs under this machine's security policy, and at 2,047 chunks exact search is both fast and error-free | The corpus is small and fixed, so approximate indexes add complexity with no gain; the interface keeps Azure AI Search a one-class swap |
+| 6.3 | Structure-aware chunks | Splitting at articles keeps each chunk a complete legal thought | Lawyers cite by article, so the chunk boundary is the citation boundary |
+| 6.4 | Gemini 3.1 Flash-Lite for answers, gemini-embedding-001 for vectors | Free, one provider for both calls, and within one question of a second model on our evaluation | The model only rewrites supplied passages with citations, a task where a small model is enough |
+| 6.5 | Versioned documents with effective dates | It is the only design that can answer a question about a past date | The CSRD changed three times in 14 months, so date-correct answers are the product, not a feature |
+| 6.6 | Plain Python services, no orchestration framework | Every retrieval step stays visible and testable | The refusal and citation checks must be explainable line by line in review |
+| 6.7 | FastAPI | Typed validation and generated API docs with no extra code | Day 1 already uses it, so both projects share one pattern |
+| 6.8 | Refusal and citation checks in code, not only in the prompt | A prompt can be ignored by the model; code cannot | In advisory work a confident wrong answer costs more than an honest refusal |
 
 ### 6.1 Retrieval method
 
+**Decision.** Vector search is the default. The service first keeps only chunks from the version in force on the chosen date and country, then ranks them by cosine similarity to the question. If the question cannot be embedded (quota or outage), search falls back to keyword ranking. Hybrid ranking (keywords plus vectors) stays available through `SEARCH_BACKEND=hybrid`.
+
+**Why this over the rest.** Advisers ask "who has to report?" while the Directive says "undertakings". Meaning matches that gap; keywords do not.
+
+**What the project changes.** Filtering before ranking is the key design point. Date is part of correctness here, not relevance, so it is enforced as a rule rather than left to a score.
+
 | Option | Pros | Cons |
 |---|---|---|
-| **Hybrid search (keywords plus vectors) with filters** (chosen) | Exact terms such as article numbers match by keyword; paraphrased questions match by meaning; filters handle country and dates | More configuration than either alone |
-| Vector search only | Simple | Misses exact references like "Article 29b"; weak on identifiers |
-| Keyword search only | Precise for exact terms | Misses paraphrased questions |
+| **Vector search with metadata filters first** (chosen) | Handles paraphrase; filters guarantee the right version and country | Weaker on exact identifiers such as "Article 29b" |
+| Hybrid (keywords plus vectors, merged by rank) | Covers both exact references and paraphrase | Two scores to tune and explain; kept as a setting and measured in evaluation |
+| Keyword search only | Precise for exact terms | Misses plain-language questions |
 
-Chosen because regulatory questions mix exact references and plain-language wording. The pilot implements this locally by combining keyword scores with embedding similarity. Verify that hybrid search and filters are available on the Azure AI Search tier in the shared Resource Group before the move.
+**Trade-off accepted.** Exact references can rank lower under vector-only search. The keyword fallback and the hybrid setting cover this, and the 40-question evaluation is the evidence for keeping or changing the default. Verify hybrid search and filters on the Azure AI Search tier in the shared Resource Group before the move.
 
 ### 6.2 Vector store
 
+**Decision.** An in-memory vector index (`VectorIndex`) holds all vectors as one normalised matrix and is rebuilt when the stored count changes. It sits behind the `SearchIndex` interface. Azure AI Search is the production target.
+
+**Why this over the rest.** ChromaDB, Qdrant (local mode) and FAISS were all tried on the pilot machine and none would load, because Windows Application Control blocks their native components (`grpc`, `_swigfaiss`). The block was not bypassed. A numpy matrix has no extra native component of its own to block.
+
+**What the project changes.** The library is 2,047 chunks and rarely changes, so brute-force comparison is exact and takes about 16 ms. Approximate nearest-neighbour indexes exist to trade accuracy for speed at millions of items. We need neither the trade nor the complexity.
+
 | Option | Pros | Cons |
 |---|---|---|
-| **Azure AI Search** (target) | Required stack for UC1; hybrid search and metadata filters in one service; managed | Second datastore to keep in sync; cost grows with tier; not available during the pilot build |
-| **Local search behind an interface** (pilot) | Works without Azure access; same filters and scoring ideas; easy to test | Does not scale; no managed ranking features |
-| `pgvector` in PostgreSQL | One datastore; relational joins with metadata; lowest cost | Outside the required stack; weaker hybrid search tooling; slower at large scale |
-| FAISS | Fast, free, runs locally | No filtering or persistence by default; nothing managed; not suitable for production |
-| ChromaDB, Qdrant (local mode), FAISS tried on the pilot machine | Real vector databases that run without a server | All three failed to load on the pilot machine: Windows Application Control blocks their native components (`grpc`, `_swigfaiss`). Not bypassed. Would need an IT allow-list, a container, or `pgvector` on a PostgreSQL server |
-| **In-memory vector index** (pilot, `VectorIndex`) | No native components, so it runs under the machine's security policy; filters by date and country first, then ranks by cosine similarity; 16 ms over 950 vectors | Rebuilt in memory, no approximate-nearest-neighbour index, fine for thousands of chunks, not millions |
+| **In-memory vector index** (pilot) | No native components; exact results; easy to test; filters by date and country first | Does not scale past tens of thousands of chunks; rebuilt in memory |
+| **Azure AI Search** (target) | Required stack; hybrid search and filters in one managed service | Second datastore to keep in sync; cost grows with tier; no access during the pilot |
+| `pgvector` in PostgreSQL | One datastore; joins with metadata; lowest cost | Outside the required stack; needs a PostgreSQL server the pilot does not run |
+| ChromaDB, Qdrant local, FAISS | Purpose-built vector stores | Failed to load on the pilot machine; would need an IT allow-list or a container |
+
+**Trade-off accepted.** No scaling headroom. At 100 times the load the index moves to Azure AI Search, which the interface makes a one-class change.
 
 ### 6.3 Chunking strategy
 
+**Decision.** Split at the document's own headings (Article, Section, Chapter, Annex), cap each chunk at about 350 tokens, and carry a 40-token overlap when a long section is cut.
+
+**Why this over the rest.** Fixed-size chunks slice articles mid-sentence and produce citations nobody can check. Whole-document embeddings are too coarse to cite and waste model context.
+
+**What the project changes.** In legal work the citation is the deliverable. Tying the chunk boundary to the article boundary means every citation points to something a lawyer would recognise.
+
 | Option | Pros | Cons |
 |---|---|---|
-| **Structure-aware chunks** (by article or section, with a size limit and small overlap) (chosen) | Citations point to a real article; chunks keep their meaning | Needs parsing per document type |
-| Fixed-size chunks | Simple to build | Cuts sentences and articles in half; poor citations |
-| Whole-document embeddings | Fewest chunks | Too coarse to cite; wastes model context |
+| **Structure-aware chunks** (chosen) | Citations point to a real article; chunks keep their meaning | Needs heading rules per document type |
+| Fixed-size chunks | Simple | Cuts articles in half; poor citations |
+| Whole-document embeddings | Fewest chunks | Too coarse to cite |
 
-Chunk size and overlap will be tuned on the evaluation set, not guessed.
+**Trade-off accepted.** Heading detection is rule-based and fits EU legal text better than web pages. Chunk size and overlap are tuned on the evaluation set, not guessed.
 
 ### 6.4 Chat model
 
+**Decision.** `gemini-3.1-flash-lite` writes answers and `gemini-embedding-001` creates vectors. `gemini-3.5-flash-lite` was run on the same questions as the required second model.
+
+**Why this over the rest.** It is free to start, one key covers both calls, and on our comparison it was within one question of the second model at lower cost per question. A Claude model was not an option without a key, and Claude has no embedding model.
+
+**What the project changes.** The model does not recall law. It rewrites passages it is handed and cites them, which is a constrained task. That is why a small, cheap model is a reasonable choice here and would not be for open-ended advice.
+
 | Option | Pros | Cons |
 |---|---|---|
-| **Azure OpenAI chat model** (target, if available in the Resource Group) | Same cloud as search; no data leaves Azure; one bill | Depends on the models granted to the group; not available during the pilot build |
-| **Gemini** (pilot) | Free tier; works now; has an embedding model | Different provider from the target; free-tier limits and occasional overload |
-| Claude API | Strong at following citation instructions; useful for the program's required model comparison | Separate provider; Claude has no embedding model, so an Azure embedding model is still needed |
-| Small open-source model | Lowest cost | Weaker answer quality; hosting effort |
+| **Gemini** (pilot) | Free tier; works now; includes an embedding model | Different provider from the target; free-tier limits; free-tier content may be used to improve Google products |
+| **Azure OpenAI** (target) | Same cloud as search; data stays in Azure; one bill | Depends on the models granted to the group; not available during the pilot |
+| Claude API | Strong at following citation instructions | Separate provider; still needs an embedding model from elsewhere |
+| Small open-source model | Lowest cost | Weaker answers; hosting effort |
 
-The program expects a comparison of at least two models. The plan is to build with one and run the evaluation set against a second, reporting accuracy, cost and speed. Verify which models are available in the shared Resource Group once access is granted.
+**Trade-off accepted.** The free tier is for public documents only. Client material needs a paid tier or Azure. Verify which models the shared Resource Group provides once access is granted.
 
 ### 6.5 Handling changing rules
 
+**Decision.** Each document has versions with an effective start and end date. A new version closes the previous one on its start date. Search filters on `effective_from <= as_of < effective_to`.
+
+**Why this over the rest.** Keeping only the latest text cannot answer a question about last year's report. Rebuilding the index on every change loses history and cannot explain what changed.
+
+**What the project changes.** The Directive moved through three versions in 14 months. A user preparing a 2024 report needs 2024 rules. Date-correctness is the core requirement, so the data model is built around it.
+
 | Option | Pros | Cons |
 |---|---|---|
-| **Version table with effective dates, filtered at search time** (chosen) | Answers any date correctly; old versions stay available | More data and a more complex search filter |
+| **Version table with effective dates** (chosen) | Answers any date; old versions stay available | More data and a more complex filter |
 | Keep only the latest version | Simplest | Cannot answer past or future dates |
-| Re-index on every change and delete the old index | Always current | Loses history; cannot explain what changed |
+| Re-index on every change, delete the old | Always current | Loses history; cannot explain what changed |
+
+**Trade-off accepted.** A new version must start after the previous one, and ingestion rejects back-dated versions rather than guessing.
 
 ### 6.6 Framework
 
+**Decision.** Plain Python services calling the model and embedding APIs directly.
+
+**Why this over the rest.** Orchestration frameworks hide the retrieval and prompt steps behind abstractions. Here every step is a small function we can test and show.
+
+**What the project changes.** The value of this system is its guard rails: the evidence threshold, the citation check, the refusal. These must be explainable line by line to a reviewer, which a framework makes harder.
+
 | Option | Pros | Cons |
 |---|---|---|
-| **Plain Python services with direct SDK calls** (chosen) | Every step is visible and testable; easy to explain in review | More code to write |
-| LangChain | Many ready-made parts | Hides the retrieval steps; harder to debug and defend |
-| LlamaIndex | Strong for document indexing | Same trade-off; adds a layer between the code and the services |
+| **Plain Python services** (chosen) | Visible, testable, easy to defend | More code to write |
+| LangChain | Many ready-made parts | Hides retrieval; harder to debug |
+| LlamaIndex | Strong document indexing | Same trade-off; extra layer |
 
 ### 6.7 Backend runtime
 
+**Decision.** FastAPI with Pydantic models. Endpoints are synchronous today; they move to async if concurrent load requires it.
+
+**Why this over the rest.** Request validation, typed responses and generated API documentation come built in.
+
+**What the project changes.** The Day 1 service already uses FastAPI, so both projects share one pattern and one set of conventions for keys, errors and tests.
+
 | Option | Pros | Cons |
 |---|---|---|
-| **FastAPI with async endpoints** (chosen) | Pydantic validation, generated OpenAPI docs, async calls to the model and search | Async needs care with the database driver |
-| Flask | Familiar | No built-in validation or async focus |
-| Django REST | Full framework with an admin panel | Heavier than this service needs |
+| **FastAPI** (chosen) | Validation, OpenAPI docs, async ready | Async needs care with the database driver |
+| Flask | Familiar | No built-in validation |
+| Django REST | Full framework with admin | Heavier than this service needs |
+
+### 6.8 Grounding and refusal
+
+**Decision.** Two checks run in code, outside the model. Before the model is called, the best match must clear an evidence threshold or the answer is `insufficient_evidence`. After the model answers, every citation number must refer to a source it was given, and an answer with no valid citation is replaced by a refusal. Answers that cite both legal text and news or guidance pages are flagged, with a note that the legal text prevails.
+
+**Why this over the rest.** A prompt that says "only use the sources" can be ignored by the model. A check in code cannot be.
+
+**What the project changes.** The users are advisers whose output goes to clients. A confident wrong answer is worse than "I could not find support for this", so the system is built to prefer refusal.
+
+| Option | Pros | Cons |
+|---|---|---|
+| **Code checks plus prompt rules** (chosen) | Enforced regardless of model behaviour | Can refuse a question the model could have answered |
+| Prompt rules only | Simplest | Not enforceable |
+| Second model as a judge | Can catch subtle errors | Extra cost and latency; its own failure modes |
+
+**Trade-off accepted.** Some valid questions are refused. The evaluation measures this, and the threshold is tuned on it.
 
 ## 7. Security considerations
 
@@ -185,12 +258,13 @@ See the [cost estimate](cost-estimate.md): about $126 a month for 100 users and 
 | Area | State |
 |---|---|
 | Data | 10 public documents loaded: 7 documents, 10 versions, 2,047 chunks |
-| Embeddings | 950 of 2,047 chunks have vectors. The Gemini free tier allows 1,000 embedding requests a day and that limit was reached. The decision is to keep this set |
-| Search | Default is vector search: date and country filter first, then cosine similarity over the 950 stored vectors. If the question cannot be embedded (quota, outage) it falls back to keyword search. `SEARCH_BACKEND=hybrid` restores the merged keyword plus vector ranking |
-| Vector search limit | A chunk with no vector cannot be found by vector search. The 1,097 chunks without vectors (all of Omnibus I, the news and guidance pages, old ESRS) are only reachable through the keyword fallback, so vector mode needs more embeddings to cover them |
+| Embeddings | 1,830 of 2,047 chunks (89%) have vectors. The 217 without are old ESRS Set 1 paragraphs, superseded in November 2026. The Gemini free tier allows 1,000 embedding requests a day, so they wait for the next quota reset |
+| Search | Default is vector search: date and country filter first, then cosine similarity over the 1,830 stored vectors (median 16 ms). Question vectors are cached on disk under a hash of the question, so a repeated question costs no quota. If the question cannot be embedded (quota, outage) it falls back to keyword search. `SEARCH_BACKEND=hybrid` restores the merged keyword plus vector ranking |
+| Vector search limit | A chunk with no vector cannot be found by vector search. The 217 chunks without vectors are only reachable through the keyword fallback. Every document in force today is fully covered |
 | Chat API | Conversations, cited answers, refusal on weak evidence, citation validation, 401/404/422/502 codes |
 | Chat screen | React app with date and jurisdiction filters and an expandable citation panel |
-| Evaluation | 20 questions, 18 to 19 correct on repeated runs (see [evaluation results](evaluation-results.md) and [model comparison](model-comparison.md)) |
+| Evaluation | 40 questions. First full run: 36 correct (90%), but the quota ran out part way, so the run mixed vector and keyword search. A clean vector run is pending (see [evaluation results](evaluation-results.md) and [model comparison](model-comparison.md)) |
+| Tests | 62 backend tests, none call a real model |
 | Source conflicts | Answers that cite both legal text and news or guidance pages are flagged, with a note that the legal text prevails |
 | Not built | `POST /documents` upload |
 | Dropped on purpose | Company-size filter. Size thresholds are written inside the legal text, not stored as metadata on a document, so a filter would be invented data. Questions about size are answered from the text itself |

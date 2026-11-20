@@ -7,3 +7,5 @@ node_modules/
 dist/
 .DS_Store
 *.db
+.query_embedding_cache.json
+.query_embedding_cache.tmp

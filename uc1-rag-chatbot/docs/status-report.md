@@ -11,11 +11,11 @@ The chatbot works end to end on a local stack. It answers EU sustainability repo
 | Measure | Result |
 |---|---|
 | Source documents loaded | 10 documents, 7 titles, 10 versions, 2,047 chunks |
-| Chunks with embeddings | 950 of 2,047 (free-tier daily limit reached) |
-| Backend tests | 40 passing, none call a real model |
-| Evaluation | 18 to 19 of 20 questions correct across runs |
+| Chunks with embeddings | 1,830 of 2,047 (89%); the rest are old ESRS Set 1 text |
+| Backend tests | 62 passing, none call a real model |
+| Evaluation | 36 of 40 correct (90%) on the first full run; all 7 date questions and all 11 refusals correct. That run mixed vector and keyword search, so a clean vector rerun is pending |
 | Correct refusals | 8 of 8 |
-| Median time per question | 2.4s to 3.6s depending on the model |
+| Median time per question | about 3.5s end to end; the search itself takes 16 ms |
 | Cost per question | about $0.0005 (model tokens only) |
 | Estimated monthly cost | about $126 for 100 users, about $1,752 for 5,000 users |
 
@@ -35,9 +35,9 @@ The chatbot works end to end on a local stack. It answers EU sustainability repo
 | Item | Impact | Plan |
 |---|---|---|
 | No Azure access or issued keys | The required stack is not demonstrated; Azure claims are unverified | Request access from the mentor. Search and model sit behind interfaces, so the swap touches two files |
-| Free-tier embedding limit (1,000 a day) | 1,097 chunks have no vector, so search for those is keyword only | Decision made to keep the current set. Rerun the evaluation after the quota resets |
+| Free-tier embedding limit (1,000 a day) | The quota ran out during evaluation, so part of the run used keyword search. 217 chunks have no vector | Rerun the evaluation after the quota resets. Question vectors are now cached, so repeats cost nothing |
 | Small evaluation set (20, target 40) | Scores are indicative | Extend to 40 questions |
-| Results vary between runs | 18 versus 19 of 20 | Report a range, not a single figure |
+| Results vary between runs | 18 versus 19 of 20 on the earlier set | Report a range, not a single figure |
 | Free tier may use content to improve Google products | Client data must not use it | Paid tier or Azure before any client material |
 | Azure prices are list prices from 2026-11-19 | Actual bills depend on region, discounts and extras not priced | Confirm in the Azure pricing calculator |
 | No UC1 brief from the mentor | Scenario and targets are proposals | Confirm in the next mentor session |

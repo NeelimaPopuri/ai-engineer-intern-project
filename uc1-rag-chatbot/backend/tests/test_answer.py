@@ -118,6 +118,23 @@ def test_markers_are_renumbered_to_match_citation_ranks(session):
     assert [c.rank for c in msg.citations] == [1, 2]
 
 
+def test_prompt_tells_the_model_to_keep_brackets_for_source_numbers(session):
+    seen = {}
+
+    def capture(prompt):
+        seen["prompt"] = prompt
+        return LLMReply("Large companies must report [1].", 1, 1, "fake")
+
+    answer_question(session, make_conversation(session), "Who must report?", FakeIndex(session), capture)
+    assert "Square brackets are only for source numbers 1 to 1" in seen["prompt"]
+
+
+def test_paragraph_numbers_in_brackets_are_still_rejected(session):
+    msg = answer_question(session, make_conversation(session), "Who must report?", FakeIndex(session),
+                          reply("Large companies must report [1] under paragraph [37]."))
+    assert msg.answer_status == "insufficient_evidence"
+
+
 def test_answer_without_citation_is_rejected(session):
     msg = answer_question(session, make_conversation(session), "Who must report?", FakeIndex(session), reply("Large companies."))
     assert msg.answer_status == "insufficient_evidence" and msg.citations == []

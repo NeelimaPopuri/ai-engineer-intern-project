@@ -24,16 +24,23 @@ class LLMReply:
 
 def generate(prompt: str) -> LLMReply:
     for attempt in range(3):
-        res = httpx.post(
-            URL.format(model=settings.gemini_model),
-            headers={"x-goog-api-key": settings.gemini_api_key},
-            json={
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {"maxOutputTokens": 1024, "temperature": 0.1},
-            },
-            timeout=60,
-        )
-        if res.status_code in (429, 503) and attempt < 2:
+        last = attempt == 2
+        try:
+            res = httpx.post(
+                URL.format(model=settings.gemini_model),
+                headers={"x-goog-api-key": settings.gemini_api_key},
+                json={
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"maxOutputTokens": 1024, "temperature": 0.1},
+                },
+                timeout=60,
+            )
+        except httpx.TransportError as exc:  # dropped connection, DNS failure, timeout
+            if last:
+                raise LLMError(f"Model request could not reach the service: {type(exc).__name__}") from exc
+            time.sleep(1.5 * (attempt + 1))
+            continue
+        if res.status_code in (429, 503) and not last:
             time.sleep(1.5 * (attempt + 1))
             continue
         break
