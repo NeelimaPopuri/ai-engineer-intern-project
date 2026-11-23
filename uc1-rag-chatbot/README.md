@@ -11,6 +11,7 @@ A retrieval-augmented chatbot that answers EU sustainability reporting questions
 - [Problem statement](docs/problem-statement.md)
 - [Database design](docs/database-design.md)
 - [Solution design](docs/solution-design.md)
+- [Architecture walkthrough](docs/architecture-walkthrough.md) (a speaking guide: every step, the options, and why we chose what we chose)
 - [Cost estimate](docs/cost-estimate.md)
 - [Evaluation results](docs/evaluation-results.md)
 - [Model comparison](docs/model-comparison.md)
