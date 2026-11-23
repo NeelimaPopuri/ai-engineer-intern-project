@@ -15,6 +15,42 @@ The decision records with full option tables are in the [solution design](soluti
 
 Advisers ask questions about EU sustainability reporting rules. The rules changed three times in 14 months, so the answer depends on the date. We keep 10 public source documents (7 titles, 10 versions) cut into 2,047 passages. For each question we keep only the passages from the version in force on the chosen date, find the ones closest in meaning, give six of them to a language model, and accept the answer only if it cites those passages correctly. If the evidence is weak, it says so instead of guessing.
 
+## The pipeline at a glance, with the exact technology used
+
+### A. Preparing the library (runs when documents change)
+
+| # | Step | What happens | Technology exactly used | Why |
+|---|---|---|---|---|
+| 1 | Collect | 10 public EU documents are fetched from official publishers, with URL, date and effective date recorded | Python script with `httpx` (HTTP client). Legal texts through the Publications Office CELEX resolver (`publications.europa.eu`). Record kept in a CSV file | A legal assistant is only as trustworthy as its sources |
+| 2 | Clean | HTML is turned into plain text, keeping headings | Python standard library `html.parser` with a small custom class and regular expressions | Sources already have structure, so a small parser is enough |
+| 3 | Version | Each document is stored as dated versions. A new version closes the old one | SQLAlchemy 2 (ORM) and Alembic (migrations) on SQLite in the pilot, PostgreSQL as the target. SHA-256 content hash so a repeat load changes nothing | The rules changed 3 times in 14 months, so the answer depends on the date |
+| 4 | Chunk | Text is split at Article and Section headings, about 350 tokens each, with a 40-token overlap | Custom Python (`chunking.py`) with regular expressions for headings. Token count estimated at about 4 characters per token | A citation then points to a real article. This gives 2,047 chunks |
+| 5 | Embed | Each chunk becomes 768 numbers | Google Gemini API, model `gemini-embedding-001`, task type RETRIEVAL_DOCUMENT, called over REST with `httpx`. Vectors stored in a `chunk_embeddings` table (JSON column) | Matches questions by meaning, so "who must report" finds "undertakings" |
+
+### B. Answering one question (every time)
+
+| # | Step | What happens | Technology exactly used | Why |
+|---|---|---|---|---|
+| 1 | Filter | Keep only chunks from the version in force on the chosen date, and for the chosen country | SQL query through SQLAlchemy (date range on `effective_from` and `effective_to`, plus jurisdiction) | The date is part of correctness. An old rule must never outrank the current one |
+| 2 | Embed the question | The question becomes a vector, cached so repeats cost nothing | Same Gemini embedding model, task type RETRIEVAL_QUERY. Cache is a local JSON file keyed by a SHA-256 hash, so no question text is stored | Same space as the chunks, and it saves quota |
+| 3 | Vector search | Rank the remaining chunks by cosine similarity and take the top 6 | `numpy`: one in-memory matrix of normalised vectors (our `VectorIndex` class), about 16 ms. Keyword fallback is our own BM25 implementation | Fast and exact at this size, and nothing blocked by the machine's security policy |
+| 4 | Evidence check | If the best match scores under 0.6, answer "not enough evidence" without calling the model | Plain Python threshold in `answer.py` | Cheaper, and it never guesses |
+| 5 | Generate | The model gets the 6 numbered passages and writes a short answer with citations | Google Gemini API, model `gemini-3.1-flash-lite`, `generateContent` over REST with `httpx`, temperature 0.1, up to 1,024 output tokens | The model only rewrites supplied text, so a small model is enough |
+| 6 | Citation check, in code | Every citation must point to a passage we supplied. Otherwise it is replaced by a refusal | Python with a regular expression for `[n]` and `[n, m]` markers, then renumbering | A prompt can be ignored by the model. Code cannot |
+| 7 | Flag and save | Legal text mixed with news pages is flagged. The answer, citations and token counts are saved | SQLAlchemy writing to the `messages` and `citations` tables | Advisers need to see which source outranks which |
+
+### C. Around the pipeline
+
+| Layer | Technology exactly used |
+|---|---|
+| API | FastAPI with Pydantic models, served by `uvicorn`, API-key header on every route |
+| Screen | React 18, Vite, Tailwind CSS 4, Lucide icons. The Vite dev proxy adds the API key so the browser never holds it |
+| Tests | `pytest`, 74 tests, none call a real model |
+| Evaluation | A script that runs 40 labelled questions against the real search and model, and scores each one |
+| Optional | Pinecone adapter (REST with `httpx`), tested against a fake service only |
+
+If a question cannot be embedded (quota or outage), step B3 falls back to keyword search. The app keeps answering with weaker retrieval.
+
 ## Step 0. Why retrieval at all?
 
 | Type | What it is | Why it fits or fails here |
