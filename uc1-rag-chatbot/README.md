@@ -32,7 +32,7 @@ cd backend
 ```
 
 ```bash
-# frontend, in a second terminal (first time: npm ci --legacy-peer-deps)
+# frontend, in a second terminal (first time: npm ci)
 cd frontend
 npm run dev
 ```

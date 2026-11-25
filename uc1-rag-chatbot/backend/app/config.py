@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     app_api_key: str
     gemini_api_key: str
     gemini_model: str = "gemini-3.1-flash-lite"
+    # Used when the main model is overloaded or no longer served. Empty turns the fallback off.
+    gemini_fallback_model: str = "gemini-3.5-flash-lite"
     # "vector" = local vector search with keyword fallback; "hybrid" = keywords plus vectors merged;
     # "pinecone" = Pinecone first, then the local vector search if Pinecone cannot be used
     search_backend: str = "vector"

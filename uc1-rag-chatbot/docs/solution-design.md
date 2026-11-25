@@ -182,6 +182,8 @@ Each decision is recorded the same way: what we chose, why it beats the alternat
 
 **Trade-off accepted.** The free tier is for public documents only. Client material needs a paid tier or Azure. Verify which models the shared Resource Group provides once access is granted.
 
+**Fallback model.** On 2026-11-25 the main model answered HTTP 503 (overloaded) on every call for several minutes while the second model answered normally. The client now retries twice, then hands the call to `gemini-3.5-flash-lite`, and records which model answered on each message. A rejected key is not retried on the second model, because it would fail there too. The fallback costs more per token ($0.30 in and $2.50 out per million, against $0.25 and $1.50), so the cost estimate is a slight underestimate on busy days.
+
 ### 6.5 Handling changing rules
 
 **Decision.** Each document has versions with an effective start and end date. A new version closes the previous one on its start date. Search filters on `effective_from <= as_of < effective_to`.
